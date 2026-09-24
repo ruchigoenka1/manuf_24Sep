@@ -1,0 +1,11 @@
+streamlit
+streamlit-authenticator
+pandas
+numpy
+scipy
+plotly
+pulp
+pymoo
+graphviz
+openpyxl
+xlsxwriter

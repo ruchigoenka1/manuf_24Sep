@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit_authenticator as stauth
 from datetime import datetime
 
-st.set_page_config(layout="wide", page_title="Inventory & Manufacturing App")
+st.set_page_config(layout="wide", page_title="Advanced Job Scheduler")
 
 # =========================================================================
 # SECURE AUTHENTICATION MODULE 
@@ -40,28 +40,29 @@ if st.session_state.get("authentication_status") is False:
     st.error("Username/password is incorrect")
     st.stop()
 elif st.session_state.get("authentication_status") is None:
-    st.warning("Please enter your username and password to access the scheduler")
+    st.warning("Please enter your username and password to access the app")
     st.stop()
 
 # =========================================================================
-# INITIALIZE GLOBAL SESSION STATE
+# GLOBAL SESSION STATE INITIALIZATION 
 # =========================================================================
 if "results_df" not in st.session_state:
     st.session_state.results_df = None
     st.session_state.makespan = None
     st.session_state.penalty_msg = ""
+
 if 'seed_counter' not in st.session_state:
     st.session_state.seed_counter = 42
 
 # =========================================================================
-# GLOBAL SIDEBAR SETTINGS
+# GLOBAL SIDEBAR & ENGINE SETTINGS (Visible on all pages)
 # =========================================================================
 with st.sidebar:
     st.write(f"Welcome, **{st.session_state.get('name', 'User')}**")
     authenticator.logout("Log Out", "sidebar")
     st.markdown("---")
     
-    st.header("⚙️ Global Settings")
+    st.header("⚙️ Global Settings (Scheduler)")
     st.session_state.start_date = st.date_input("Project Start Date", datetime(2024, 1, 1))
 
     st.session_state.scheduling_strategy = st.radio(
@@ -80,7 +81,8 @@ with st.sidebar:
     if st.session_state.solver_choice == "Optimizer":
         st.session_state.time_limit = st.number_input(
             "Optimizer Time Limit (Seconds)", 
-            min_value=10, max_value=1200, value=120, step=10
+            min_value=10, max_value=1200, value=120, step=10,
+            help="Limits how long the solver searches. Increase if you get timeout errors."
         )
     else:
         st.session_state.ga_generations = st.number_input(
@@ -91,6 +93,32 @@ with st.sidebar:
             "Size", 
             min_value=20, max_value=500, value=50, step=10
         )
+    st.divider()
 
-st.title("Inventory & Manufacturing App")
-st.info("👈 Please select a module from the sidebar to begin.")
+# =========================================================================
+# APP NAVIGATION 
+# =========================================================================
+# Ensure the filenames below exactly match the Python files saved in your folder
+prod_plan_page = st.Page("production_planning.py", title="Production Planning", icon="🗓️")
+# dem_hist_page = st.Page("demand_histogram.py", title="Demand Histogram Simulator", icon="📊")
+# dem_analysis_page = st.Page("demand_analysis.py", title="Demand Analysis", icon="📈")
+# cont_review_page = st.Page("continuous_review.py", title="Continuous Review Simulator", icon="🔄")
+# per_review_page = st.Page("periodic_review.py", title="Periodic Review Simulator", icon="📅")
+# inv_audit_page = st.Page("inventory_audit.py", title="Inventory Audit", icon="📋")
+# inv_kpi_page = st.Page("inventory_kpi.py", title="Inventory KPI & Aging", icon="🎯")
+# ccc_map_page = st.Page("cash_conversion_map.py", title="Cash Conversion Map", icon="🗺️")
+# cash_flow_page = st.Page("cash_flow_scenario.py", title="Cash Flow & Scenarios", icon="💵")
+
+pg = st.navigation([
+    prod_plan_page, 
+    dem_hist_page, 
+    dem_analysis_page, 
+    cont_review_page, 
+    per_review_page, 
+    inv_audit_page, 
+    inv_kpi_page, 
+    ccc_map_page, 
+    cash_flow_page
+])
+
+pg.run()

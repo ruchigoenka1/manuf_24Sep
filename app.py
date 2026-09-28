@@ -111,14 +111,14 @@ prod_plan_page = st.Page("production_planning.py", title="Production Planning", 
 
 pg = st.navigation([
     prod_plan_page, 
-    dem_hist_page, 
-    dem_analysis_page, 
-    cont_review_page, 
-    per_review_page, 
-    inv_audit_page, 
-    inv_kpi_page, 
-    ccc_map_page, 
-    cash_flow_page
+    # dem_hist_page, 
+    # dem_analysis_page, 
+    # cont_review_page, 
+    # per_review_page, 
+    # inv_audit_page, 
+    # inv_kpi_page, 
+    # ccc_map_page, 
+    # cash_flow_page
 ])
 
 pg.run()

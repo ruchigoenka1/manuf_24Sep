@@ -55,9 +55,38 @@ if 'seed_counter' not in st.session_state:
     st.session_state.seed_counter = 42
 
 # =========================================================================
-# GLOBAL SIDEBAR & ENGINE SETTINGS (Visible on all pages)
+# 1. APP NAVIGATION (DECLARE FIRST SO IT APPEARS AT THE TOP)
+# =========================================================================
+prod_plan_page = st.Page("production_planning.py", title="Production Planning", icon="🗓️")
+# dem_hist_page = st.Page("demand_histogram.py", title="Demand Histogram Simulator", icon="📊")
+# dem_analysis_page = st.Page("demand_analysis.py", title="Demand Analysis", icon="📈")
+# cont_review_page = st.Page("continuous_review.py", title="Continuous Review Simulator", icon="🔄")
+# per_review_page = st.Page("periodic_review.py", title="Periodic Review Simulator", icon="📅")
+# inv_audit_page = st.Page("inventory_audit.py", title="Inventory Audit", icon="📋")
+# inv_kpi_page = st.Page("inventory_kpi.py", title="Inventory KPI & Aging", icon="🎯")
+# ccc_map_page = st.Page("cash_conversion_map.py", title="Cash Conversion Map", icon="🗺️")
+# cash_flow_page = st.Page("cash_flow_scenario.py", title="Cash Flow & Scenarios", icon="💵")
+
+
+
+# Initialize the navigation menu. Streamlit will pin this to the top of the sidebar.
+pg = st.navigation([
+    prod_plan_page, 
+    # dem_hist_page, 
+    # dem_analysis_page, 
+    # cont_review_page, 
+    # per_review_page, 
+    # inv_audit_page, 
+    # inv_kpi_page, 
+    # ccc_map_page, 
+    # cash_flow_page
+])
+
+# =========================================================================
+# 2. GLOBAL SIDEBAR & ENGINE SETTINGS (RENDERS BELOW NAVIGATION)
 # =========================================================================
 with st.sidebar:
+    st.divider() # Visual break between the navigation menu and settings
     st.write(f"Welcome, **{st.session_state.get('name', 'User')}**")
     authenticator.logout("Log Out", "sidebar")
     st.markdown("---")
@@ -93,32 +122,8 @@ with st.sidebar:
             "Size", 
             min_value=20, max_value=500, value=50, step=10
         )
-    st.divider()
 
 # =========================================================================
-# APP NAVIGATION 
+# 3. RUN THE SELECTED PAGE
 # =========================================================================
-# Ensure the filenames below exactly match the Python files saved in your folder
-prod_plan_page = st.Page("production_planning.py", title="Production Planning", icon="🗓️")
-# dem_hist_page = st.Page("demand_histogram.py", title="Demand Histogram Simulator", icon="📊")
-# dem_analysis_page = st.Page("demand_analysis.py", title="Demand Analysis", icon="📈")
-# cont_review_page = st.Page("continuous_review.py", title="Continuous Review Simulator", icon="🔄")
-# per_review_page = st.Page("periodic_review.py", title="Periodic Review Simulator", icon="📅")
-# inv_audit_page = st.Page("inventory_audit.py", title="Inventory Audit", icon="📋")
-# inv_kpi_page = st.Page("inventory_kpi.py", title="Inventory KPI & Aging", icon="🎯")
-# ccc_map_page = st.Page("cash_conversion_map.py", title="Cash Conversion Map", icon="🗺️")
-# cash_flow_page = st.Page("cash_flow_scenario.py", title="Cash Flow & Scenarios", icon="💵")
-
-pg = st.navigation([
-    prod_plan_page, 
-    # dem_hist_page, 
-    # dem_analysis_page, 
-    # cont_review_page, 
-    # per_review_page, 
-    # inv_audit_page, 
-    # inv_kpi_page, 
-    # ccc_map_page, 
-    # cash_flow_page
-])
-
 pg.run()

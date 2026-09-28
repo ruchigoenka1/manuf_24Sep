@@ -58,6 +58,7 @@ if 'seed_counter' not in st.session_state:
 # 1. APP NAVIGATION (DECLARE FIRST SO IT APPEARS AT THE TOP)
 # =========================================================================
 prod_plan_page = st.Page("production_planning.py", title="Production Planning", icon="🗓️")
+plot_page = st.Page("plot_page.py", title="Closing Balance Plotter", icon="📈")
 # dem_hist_page = st.Page("demand_histogram.py", title="Demand Histogram Simulator", icon="📊")
 # dem_analysis_page = st.Page("demand_analysis.py", title="Demand Analysis", icon="📈")
 # cont_review_page = st.Page("continuous_review.py", title="Continuous Review Simulator", icon="🔄")
@@ -72,6 +73,7 @@ prod_plan_page = st.Page("production_planning.py", title="Production Planning", 
 # Initialize the navigation menu. Streamlit will pin this to the top of the sidebar.
 pg = st.navigation([
     prod_plan_page, 
+    plot_page,
     # dem_hist_page, 
     # dem_analysis_page, 
     # cont_review_page, 

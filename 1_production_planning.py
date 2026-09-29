@@ -315,14 +315,14 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         end_vars = {}
         assign_vars = {}
         
-        # Create safe, purely numeric names for the solver to avoid ANY character crashes
+        # PuLP 4.0+: Variables MUST be created via prob.add_variable()
         for i, t in enumerate(base_tasks):
-            start_vars[t['id']] = pulp.LpVariable(f"start_v_{i}", lowBound=0, cat='Integer')
-            end_vars[t['id']] = pulp.LpVariable(f"end_v_{i}", lowBound=0, cat='Integer')
+            start_vars[t['id']] = prob.add_variable(f"start_v_{i}", lowBound=0, cat='Integer')
+            end_vars[t['id']] = prob.add_variable(f"end_v_{i}", lowBound=0, cat='Integer')
             for j, r in enumerate(t['resources']):
-                assign_vars[(t['id'], r)] = pulp.LpVariable(f"assign_v_{i}_{j}", cat='Binary')
+                assign_vars[(t['id'], r)] = prob.add_variable(f"assign_v_{i}_{j}", cat='Binary')
                 
-        makespan = pulp.LpVariable("Makespan", lowBound=0, cat='Integer')
+        makespan = prob.add_variable("Makespan", lowBound=0, cat='Integer')
         
         if scheduling_strategy == "As Soon As Possible (ASAP)":
             prob += makespan * 1000 + pulp.lpSum([end_vars[t['id']] for t in base_tasks])
@@ -352,7 +352,7 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
                 common_res.discard("INV") 
                 if common_res:
                     seq_idx += 1
-                    y = pulp.LpVariable(f"seq_v_{seq_idx}", cat='Binary')
+                    y = prob.add_variable(f"seq_v_{seq_idx}", cat='Binary')
                     for r in common_res:
                         c12 = int(df_changeover.loc[t1['id'], t2['id']]) if t1['id'] in df_changeover.index and t2['id'] in df_changeover.columns else 0
                         c21 = int(df_changeover.loc[t2['id'], t1['id']]) if t2['id'] in df_changeover.index and t1['id'] in df_changeover.columns else 0
@@ -362,9 +362,11 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         for t in base_tasks: prob += end_vars[t['id']] <= int(deadline_dict.get(t['job'], 999))
 
         solver = pulp.PULP_CBC_CMD(timeLimit=time_limit, msg=False)
-        with st.spinner("Calculating exact optimal schedule..."): status = prob.solve(solver)
+        with st.spinner("Calculating exact optimal schedule..."): 
+            prob.solve(solver)
         
-        if pulp.LpStatus[status] in ["Optimal", "Not Solved"] and start_vars[base_tasks[0]['id']].varValue is not None:
+        # PuLP 4.0+: Use prob.status instead of the return value of solve()
+        if pulp.LpStatus[prob.status] in ["Optimal", "Not Solved"] and start_vars[base_tasks[0]['id']].varValue is not None:
             results = []
             for t in base_tasks:
                 sel_res = [r for r in t['resources'] if assign_vars[(t['id'], r)].varValue > 0.5][0]

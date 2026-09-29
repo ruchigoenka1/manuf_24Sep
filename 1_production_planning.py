@@ -362,13 +362,14 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         for t in base_tasks: prob += end_vars[t['id']] <= int(deadline_dict.get(t['job'], 999))
 
         # PuLP 4.0+: PULP_CBC_CMD is replaced by COIN_CMD
-        solver = pulp.COIN_CMD(timeLimit=time_limit, msg=False)
+        # Let PuLP auto-detect the newly installed system CBC solver
+        solver = pulp.getSolver('PULP_CBC_CMD', timeLimit=time_limit, msg=False)
+        
         with st.spinner("Calculating exact optimal schedule..."): 
             prob.solve(solver)
         
-        # PuLP 4.0+: Use prob.status instead of the return value of solve()
-        # Using pulp.value() securely fetches data from the Rust core layer
-        if pulp.LpStatus[prob.status] in ["Optimal", "Not Solved"] and pulp.value(start_vars[base_tasks[0]['id']]) is not None:
+        # Check status safely
+        if prob.status == pulp.LpStatusOptimal and pulp.value(start_vars[base_tasks[0]['id']]) is not None:
             results = []
             for t in base_tasks:
                 sel_res = [r for r in t['resources'] if pulp.value(assign_vars[(t['id'], r)]) > 0.5][0]

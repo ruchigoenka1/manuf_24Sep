@@ -308,10 +308,18 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         st.stop()
 
     if solver_choice == "Optimizer":
+        import re
+        
+        # Helper function to strip spaces and special characters for PuLP
+        def clean_pulp_name(name_str):
+            return re.sub(r'[^a-zA-Z0-9_]', '_', str(name_str))
+
         prob = pulp.LpProblem("Demand_Scheduling", pulp.LpMinimize)
-        start_vars = {t['id']: pulp.LpVariable(f"start_{t['id']}", lowBound=0, cat='Integer') for t in base_tasks}
-        end_vars = {t['id']: pulp.LpVariable(f"end_{t['id']}", lowBound=0, cat='Integer') for t in base_tasks}
-        assign_vars = {(t['id'], r): pulp.LpVariable(f"assign_{t['id']}_{r}", cat='Binary') for t in base_tasks for r in t['resources']}
+        
+        # Wrap the name parameter in clean_pulp_name()
+        start_vars = {t['id']: pulp.LpVariable(clean_pulp_name(f"start_{t['id']}"), lowBound=0, cat='Integer') for t in base_tasks}
+        end_vars = {t['id']: pulp.LpVariable(clean_pulp_name(f"end_{t['id']}"), lowBound=0, cat='Integer') for t in base_tasks}
+        assign_vars = {(t['id'], r): pulp.LpVariable(clean_pulp_name(f"assign_{t['id']}_{r}"), cat='Binary') for t in base_tasks for r in t['resources']}
         makespan = pulp.LpVariable("Makespan", lowBound=0, cat='Integer')
         
         if scheduling_strategy == "As Soon As Possible (ASAP)":
@@ -338,7 +346,8 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
                 common_res = set(t1['resources']).intersection(set(t2['resources']))
                 common_res.discard("INV") 
                 if common_res:
-                    y = pulp.LpVariable(f"seq_{t1['id']}_{t2['id']}", cat='Binary')
+                    # Sanitize the sequence variable name as well
+                    y = pulp.LpVariable(clean_pulp_name(f"seq_{t1['id']}_{t2['id']}"), cat='Binary')
                     for r in common_res:
                         c12 = int(df_changeover.loc[t1['id'], t2['id']]) if t1['id'] in df_changeover.index and t2['id'] in df_changeover.columns else 0
                         c21 = int(df_changeover.loc[t2['id'], t1['id']]) if t2['id'] in df_changeover.index and t1['id'] in df_changeover.columns else 0

@@ -58,7 +58,7 @@ df_default = pd.DataFrame(default_skus)
 st.subheader("📋 Step 1: SKU Parameter Matrix")
 edited_df = st.data_editor(
     df_default, 
-    num_rows="dynamic", 
+    num_rows="fixed",  # This disables the + button and locks the row count
     width="stretch",
     column_config={
         "Dist Type": st.column_config.SelectboxColumn(options=["Normal", "Uniform"])

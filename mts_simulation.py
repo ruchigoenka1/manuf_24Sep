@@ -349,14 +349,15 @@ if st.session_state.mts_results is not None:
     st.subheader("📋 Daily Pending Factory Orders (Backlog - Units)")
     st.markdown("Shows the total volume of units for each SKU that are currently waiting in the queue or being manufactured on each simulation day.")
     
-    pending_days_data = {"Day": np.arange(1, res['sim_days'] + 1)}
-    total_days_arr = np.zeros(res['sim_days'])
+    # Initialize dictionary first
+    pending_matrix_data = {"Day": np.arange(1, res['sim_days'] + 1)}
     
-    # Update this line to use .get()
-    for sku, arr in res.get('pending_days_history', {}).items():
-        pending_days_data[f"{sku} (Days)"] = arr.astype(int)
-        total_days_arr += arr
-        
+    # Safely extract history
+    orders_hist = res.get('pending_orders_history', {})
+    if orders_hist:
+        for sku, arr in orders_hist.items():
+            pending_matrix_data[sku] = arr.astype(int)
+            
     df_pending_matrix = pd.DataFrame(pending_matrix_data)
     st.dataframe(df_pending_matrix, width="stretch", hide_index=True)
 
@@ -364,13 +365,17 @@ if st.session_state.mts_results is not None:
     st.subheader("⏱️ Daily Factory Backlog (Processing Days)")
     st.markdown("Shows the total manufacturing time (in days) required to clear the pending orders for each SKU on any given day, plus the estimated day the factory will be completely free.")
     
+    # Initialize dictionary first
     pending_days_data = {"Day": np.arange(1, res['sim_days'] + 1)}
     total_days_arr = np.zeros(res['sim_days'])
     
-    for sku, arr in res['pending_days_history'].items():
-        pending_days_data[f"{sku} (Days)"] = arr.astype(int)
-        total_days_arr += arr
-        
+    # Safely extract history
+    days_hist = res.get('pending_days_history', {})
+    if days_hist:
+        for sku, arr in days_hist.items():
+            pending_days_data[f"{sku} (Days)"] = arr.astype(int)
+            total_days_arr += arr
+            
     pending_days_data["Total Backlog (Days)"] = total_days_arr.astype(int)
     pending_days_data["Estimated Clear Day"] = pending_days_data["Day"] + pending_days_data["Total Backlog (Days)"]
     

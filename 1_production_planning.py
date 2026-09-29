@@ -363,7 +363,7 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
 
         # PuLP 4.0+: PULP_CBC_CMD is replaced by COIN_CMD
         # Let PuLP auto-detect the newly installed system CBC solver
-        solver = pulp.getSolver('PULP_CBC_CMD', timeLimit=time_limit, msg=False)
+        solver = pulp.COIN_CMD(timeLimit=time_limit, msg=False)
         
         with st.spinner("Calculating exact optimal schedule..."): 
             prob.solve(solver)

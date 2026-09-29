@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+from datetime import datetime, timedelta
 
 # =========================================================================
 # 1. AUTHENTICATION & SESSION STATE CHECK
@@ -10,6 +11,9 @@ import plotly.express as px
 if not st.session_state.get("authentication_status"):
     st.warning("Please log in from the main app page.")
     st.stop()
+
+# Get global start date for Gantt Chart mapping
+project_start_date = st.session_state.get('start_date', datetime.today())
 
 # =========================================================================
 # 2. PAGE-SPECIFIC SIDEBAR
@@ -24,11 +28,10 @@ with st.sidebar:
 # 3. INPUT CONFIGURATION (SKU DEFINITIONS)
 # =========================================================================
 st.title("Make-to-Stock (MTS) Multi-SKU Simulator")
-st.markdown("Define the parameters for each SKU. The factory receives replenishment orders from the warehouse, takes the specified **Touch Time** to produce, and then ships it via the **Transit Time**.")
+st.markdown("Define parameters below. **Factory Constraint:** The factory can only manufacture **one SKU at a time**. Orders are processed on a strictly **FIFO (First-In, First-Out)** basis. If the factory is busy, new orders wait in the queue.")
 
 num_skus = st.number_input("Number of SKUs to Simulate", min_value=1, max_value=20, value=2, step=1)
 
-# Generate default configuration table dynamically based on number of SKUs
 default_skus = []
 for i in range(int(num_skus)):
     default_skus.append({
@@ -38,7 +41,6 @@ for i in range(int(num_skus)):
         "Variation / Range": 15,
         "Order Qty (Q)": 500,
         "Factory Touch Time (Days)": 7,
-        "Transit to WH (Days)": 3,
         "WH Reorder Point (ROP)": 300,
         "Initial WH Inventory": 400,
         "Initial Pipeline (WIP)": 0
@@ -47,8 +49,6 @@ for i in range(int(num_skus)):
 df_default = pd.DataFrame(default_skus)
 
 st.subheader("📋 Step 1: SKU Parameter Matrix")
-st.info("💡 **Tip:** If 'Dist Type' is Normal, 'Variation' is Standard Deviation. If Uniform, it represents the +/- range around the average.")
-
 edited_df = st.data_editor(
     df_default, 
     num_rows="dynamic", 
@@ -59,121 +59,145 @@ edited_df = st.data_editor(
 )
 
 # =========================================================================
-# 4. SIMULATION ENGINE
+# 4. FINITE CAPACITY SIMULATION ENGINE (FIFO)
 # =========================================================================
 st.markdown("---")
 
 if st.button("🚀 Run MTS Simulation", type="primary"):
     np.random.seed(int(seed_val))
     
-    # Dictionaries to store results for each SKU
-    kpi_results = []
-    wh_inv_history = {}
+    # Extract params into fast lookup dictionaries
+    params = {}
+    demands = {}
+    current_inv = {}
+    sales = {}
+    inv_levels = {}
     factory_wip_history = {}
-    demand_history = {}
     
-    # ADD THIS NEW LINE:
-    master_order_log = [] 
+    for _, row in edited_df.iterrows():
+        sku = str(row["SKU"])
+        params[sku] = {
+            "order_q": int(row["Order Qty (Q)"]),
+            "touch_time": int(row["Factory Touch Time (Days)"]),
+            "rop": int(row["WH Reorder Point (ROP)"])
+        }
+        
+        avg_d = float(row["Avg Demand"])
+        var_d = float(row["Variation / Range"])
+        if str(row["Dist Type"]) == "Normal":
+            demands[sku] = np.maximum(0, np.random.normal(avg_d, var_d, sim_days)).round()
+        else:
+            demands[sku] = np.random.uniform(max(0, avg_d - var_d), avg_d + var_d, sim_days).round()
+            
+        current_inv[sku] = int(row["Initial WH Inventory"])
+        sales[sku] = np.zeros(sim_days)
+        inv_levels[sku] = np.zeros(sim_days)
+        factory_wip_history[sku] = np.zeros(sim_days)
     
-    with st.spinner("Simulating supply chain physics..."):
-        for index, row in edited_df.iterrows():
-            sku = str(row["SKU"])
-            dist_type = str(row["Dist Type"])
-            avg_d = float(row["Avg Demand"])
-            var_d = float(row["Variation / Range"])
-            order_q = int(row["Order Qty (Q)"])
-            touch_time = int(row["Factory Touch Time (Days)"])
-            transit_time = int(row["Transit to WH (Days)"])
-            rop = int(row["WH Reorder Point (ROP)"])
-            init_inv = int(row["Initial WH Inventory"])
-            init_pipe = int(row["Initial Pipeline (WIP)"])
+    # State tracking
+    pipeline = [] # Transit to WH
+    factory_queue = [] # Waiting to be produced
+    active_job = None # Currently on the machine
+    master_order_log = []
+    
+    # Pre-load initial WIP into transit pipeline to avoid blocking the factory on day 1
+    for _, row in edited_df.iterrows():
+        init_pipe = int(row["Initial Pipeline (WIP)"])
+        if init_pipe > 0:
+            pipeline.append({'sku': str(row["SKU"]), 'qty': init_pipe, 'arrive_at': 1})
+
+    with st.spinner("Simulating finite-capacity factory physics..."):
+        # Master Daily Loop
+        for day in range(sim_days):
             
-            # 1. Generate Demand Array
-            if dist_type == "Normal":
-                demands = np.maximum(0, np.random.normal(avg_d, var_d, sim_days)).round()
-            else:
-                demands = np.random.uniform(max(0, avg_d - var_d), avg_d + var_d, sim_days).round()
-                
-            # 2. Tracking Arrays
-            inv_levels = np.zeros(sim_days)
-            factory_wip = np.zeros(sim_days) # Order Book volume actively being produced
-            sales = np.zeros(sim_days)
-            
-            # Initial states
-            current_inv = init_inv
-            
-            # Pipeline tracks future arrivals: list of dicts {'qty': x, 'ready_day': factory_finish, 'arrive_day': wh_receive}
-            pipeline = []
-            if init_pipe > 0:
-                # Assume initial pipeline is already halfway through transit for simplicity
-                pipeline.append({'qty': init_pipe, 'ready_day': 0, 'arrive_day': int(transit_time / 2)})
-            
-            active_factory_orders = [] # Tracks orders currently on the factory floor
-            
-            for day in range(sim_days):
-                # A. Receive incoming shipments to WH
-                arriving_today = sum(p['qty'] for p in pipeline if p['arrive_day'] == day)
-                current_inv += arriving_today
-                
-                # Clean up arrived orders from pipeline
-                pipeline = [p for p in pipeline if p['arrive_day'] > day]
-                
-                # B. Fulfill Demand
-                today_demand = demands[day]
-                sold = min(current_inv, today_demand)
-                current_inv -= sold
-                sales[day] = sold
-                inv_levels[day] = current_inv
-                
-                # C. Check Inventory Position & Reorder
-                on_order_qty = sum(p['qty'] for p in pipeline)
-                inv_position = current_inv + on_order_qty
-                
-                if inv_position <= rop:
-                    # Place order to factory
-                    prod_start = day
-                    ready_at = prod_start + touch_time
-                    # Arrives at WH the next day after production ends
-                    arrive_at = ready_at + 1 
+            # A. Receive incoming shipments to WH
+            for p in pipeline[:]:
+                if p['arrive_at'] <= day:
+                    current_inv[p['sku']] += p['qty']
+                    pipeline.remove(p)
                     
-                    pipeline.append({'qty': order_q, 'ready_day': ready_at, 'arrive_day': arrive_at})
-                    active_factory_orders.append({'qty': order_q, 'ready_day': ready_at})
+            # B. Fulfill Demand
+            for sku in params.keys():
+                today_demand = demands[sku][day]
+                sold = min(current_inv[sku], today_demand)
+                current_inv[sku] -= sold
+                sales[sku][day] = sold
+                inv_levels[sku][day] = current_inv[sku]
+                
+            # C. Check Inventory Position & Trigger Orders
+            for sku, p_data in params.items():
+                # On order = Factory Queue + Active Job + Pipeline
+                q_qty = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
+                act_qty = active_job['qty'] if (active_job and active_job['sku'] == sku) else 0
+                pipe_qty = sum(p['qty'] for p in pipeline if p['sku'] == sku)
+                
+                inv_position = current_inv[sku] + q_qty + act_qty + pipe_qty
+                
+                if inv_position <= p_data["rop"]:
+                    # Enter the back of the line (FIFO)
+                    factory_queue.append({
+                        'sku': sku,
+                        'qty': p_data["order_q"],
+                        'touch_time': p_data["touch_time"],
+                        'remaining': p_data["touch_time"],
+                        'order_day': day
+                    })
+            
+            # D. Factory Processing (Single Machine)
+            if active_job is not None:
+                active_job['remaining'] -= 1
+                
+                if active_job['remaining'] <= 0:
+                    # Job finishes today
+                    ready_at = day
+                    arrive_at = ready_at + 1 # Arrives at WH next day
                     
-                    # ADD THIS NEW BLOCK: Record order lifecycle
+                    pipeline.append({
+                        'sku': active_job['sku'], 
+                        'qty': active_job['qty'], 
+                        'arrive_at': arrive_at
+                    })
+                    
                     master_order_log.append({
-                        "SKU": sku,
-                        "Order Placed (Day)": day,
-                        "Production Start (Day)": prod_start,
+                        "SKU": active_job['sku'],
+                        "Order Placed (Day)": active_job['order_day'],
+                        "Production Start (Day)": active_job['start_day'],
                         "Production End (Day)": ready_at,
                         "WH Receipt (Day)": arrive_at,
-                        "Order Qty": order_q,
-                        "Wait Time (Days)": prod_start - day,
-                        "Total Cycle Time (Days)": arrive_at - day
+                        "Order Qty": active_job['qty'],
+                        "Wait Time (Days)": active_job['start_day'] - active_job['order_day'],
+                        "Total Cycle Time (Days)": arrive_at - active_job['order_day']
                     })
-                
-                # D. Calculate active Factory Order Book (WIP)
-                # Remove completed factory orders
-                active_factory_orders = [f for f in active_factory_orders if f['ready_day'] > day]
-                factory_wip[day] = sum(f['qty'] for f in active_factory_orders)
+                    
+                    active_job = None # Clear machine
             
-            # 3. Calculate KPIs
-            total_dem = demands.sum()
-            total_sales = sales.sum()
-            fill_rate = (total_sales / total_dem) * 100 if total_dem > 0 else 0
-            stockout_days = np.count_nonzero(demands > sales)
+            # E. Pull next job if idle
+            if active_job is None and len(factory_queue) > 0:
+                active_job = factory_queue.pop(0) # FIFO Pull
+                active_job['start_day'] = day
+                
+            # F. Record Daily WIP Tracker
+            for sku in params.keys():
+                wip = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
+                if active_job and active_job['sku'] == sku:
+                    wip += active_job['qty']
+                factory_wip_history[sku][day] = wip
+
+        # Process KPIs
+        kpi_results = []
+        for sku in params.keys():
+            tot_dem = demands[sku].sum()
+            tot_sales = sales[sku].sum()
+            fill_rate = (tot_sales / tot_dem) * 100 if tot_dem > 0 else 0
             
             kpi_results.append({
                 "SKU": sku,
                 "Fill Rate (%)": fill_rate,
-                "Stockout Days": stockout_days,
-                "Min Inventory": inv_levels.min(),
-                "Max Inventory": inv_levels.max(),
-                "Avg Inventory": inv_levels.mean()
+                "Stockout Days": np.count_nonzero(demands[sku] > sales[sku]),
+                "Min Inventory": inv_levels[sku].min(),
+                "Max Inventory": inv_levels[sku].max(),
+                "Avg Inventory": inv_levels[sku].mean()
             })
-            
-            wh_inv_history[sku] = inv_levels
-            factory_wip_history[sku] = factory_wip
-            demand_history[sku] = demands
             
     # =========================================================================
     # 5. DASHBOARD & VISUALIZATIONS
@@ -183,7 +207,6 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     st.subheader("📊 Warehouse KPI Scorecard")
     df_kpi = pd.DataFrame(kpi_results)
     
-    # Format the KPI table
     st.dataframe(
         df_kpi.style.format({
             "Fill Rate (%)": "{:.2f}%",
@@ -197,88 +220,27 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     )
     
     st.markdown("---")
-    
-    # Dual-chart layout
     st.subheader("📈 Multi-Echelon Trajectory Analysis")
     
     chart_col1, chart_col2 = st.columns(2)
-    
     with chart_col1:
         st.markdown("#### Warehouse: Closing Inventory Level")
         fig_wh = go.Figure()
-        for sku, data in wh_inv_history.items():
-            fig_wh.add_trace(go.Scatter(
-                x=np.arange(1, sim_days + 1), 
-                y=data, 
-                mode='lines', 
-                name=sku,
-                opacity=0.8
-            ))
+        for sku, data in inv_levels.items():
+            fig_wh.add_trace(go.Scatter(x=np.arange(1, sim_days + 1), y=data, mode='lines', name=sku, opacity=0.8))
         fig_wh.add_hline(y=0, line_width=1, line_color="black")
-        fig_wh.update_layout(
-            xaxis_title="Simulation Day", 
-            yaxis_title="Units on Hand",
-            template="plotly_white",
-            height=400,
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
+        fig_wh.update_layout(xaxis_title="Simulation Day", yaxis_title="Units on Hand", template="plotly_white", height=400, hovermode="x unified")
         st.plotly_chart(fig_wh, width="stretch")
         
     with chart_col2:
-        st.markdown("#### Factory: Active Order Book (WIP)")
-        st.caption("Volume of stock currently in the 'Touch Time' production phase.")
+        st.markdown("#### Factory: Active & Queued Backlog")
+        st.caption("Volume waiting in queue + actively on the machine.")
         fig_fac = go.Figure()
         for sku, data in factory_wip_history.items():
-            # Use 'hv' (horizontal-vertical) step line for plot rendering 
-            fig_fac.add_trace(go.Scatter(
-                x=np.arange(1, sim_days + 1), 
-                y=data, 
-                mode='lines', 
-                line_shape='hv',
-                name=sku,
-                opacity=0.8
-            ))
-        fig_fac.update_layout(
-            xaxis_title="Simulation Day", 
-            yaxis_title="Units in Production",
-            template="plotly_white",
-            height=400,
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
+            fig_fac.add_trace(go.Scatter(x=np.arange(1, sim_days + 1), y=data, mode='lines', line_shape='hv', name=sku, opacity=0.8))
+        fig_fac.update_layout(xaxis_title="Simulation Day", yaxis_title="Units Backlogged", template="plotly_white", height=400, hovermode="x unified")
         st.plotly_chart(fig_fac, width="stretch")
         
-    st.markdown("---")
-    
-    with st.expander("🔍 Deep Dive: SKU Demand vs Fulfillment Overlay"):
-        selected_sku = st.selectbox("Select SKU to inspect daily demand variance:", df_default["SKU"].tolist())
-        
-        if selected_sku:
-            fig_drill = go.Figure()
-            # Plot Inventory
-            fig_drill.add_trace(go.Scatter(
-                x=np.arange(1, sim_days + 1), y=wh_inv_history[selected_sku], 
-                mode='lines', name="WH Inventory", line=dict(color="#1f77b4", width=2),
-                fill='tozeroy', fillcolor='rgba(31, 119, 180, 0.1)'
-            ))
-            # Plot Demand as red bars
-            fig_drill.add_trace(go.Bar(
-                x=np.arange(1, sim_days + 1), y=demand_history[selected_sku], 
-                name="Daily Demand", marker_color="#d62728", opacity=0.4
-            ))
-            
-            fig_drill.update_layout(
-                title=f"{selected_sku}: Day-by-Day Volatility",
-                xaxis_title="Day", 
-                yaxis_title="Units",
-                template="plotly_white",
-                height=400,
-                barmode='overlay',
-                hovermode="x unified"
-            )
-            st.plotly_chart(fig_drill, width="stretch")
-
     # =========================================================================
     # 6. MANUFACTURING & ORDER LOGS
     # =========================================================================
@@ -288,15 +250,38 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     if master_order_log:
         df_orders = pd.DataFrame(master_order_log)
         
-        tab_sku, tab_sched, tab_metrics = st.tabs([
+        tab_gantt, tab_sku, tab_sched, tab_metrics = st.tabs([
+            "📊 Factory Gantt Chart",
             "📋 SKU-Wise Order Ledger", 
             "📅 Daily Factory Schedule", 
             "⏱️ Time Distribution Analytics"
         ])
         
+        with tab_gantt:
+            st.markdown("#### Factory Manufacturing Schedule")
+            st.caption("Visualizes the sequential FIFO processing on the single factory line.")
+            
+            # Map simulation days to actual dates for the Gantt chart
+            df_gantt = df_orders.copy()
+            df_gantt["Start Date"] = project_start_date + pd.to_timedelta(df_gantt["Production Start (Day)"], unit="d")
+            df_gantt["Finish Date"] = project_start_date + pd.to_timedelta(df_gantt["Production End (Day)"], unit="d")
+            df_gantt["Order Formatted"] = df_gantt.apply(lambda row: f"{row['Order Qty']} units", axis=1)
+
+            fig_gantt = px.timeline(
+                df_gantt, 
+                x_start="Start Date", 
+                x_end="Finish Date", 
+                y="SKU", 
+                color="SKU",
+                text="Order Formatted",
+                hover_data={"Wait Time (Days)": True, "Total Cycle Time (Days)": True}
+            )
+            fig_gantt.update_yaxes(autorange="reversed")
+            fig_gantt.update_layout(template="plotly_white", height=400)
+            st.plotly_chart(fig_gantt, width="stretch")
+
         with tab_sku:
             st.markdown("#### Complete Factory Order Book")
-            st.caption("Tracks exactly when each batch was requested, produced, and received at the warehouse.")
             selected_log_sku = st.selectbox("Filter Ledger by SKU:", ["All"] + df_default["SKU"].tolist())
             
             if selected_log_sku == "All":
@@ -306,46 +291,38 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 
         with tab_sched:
             st.markdown("#### Active Production Schedule")
-            st.caption("Shows which SKUs are actively being manufactured on any given day.")
             
-            # Expand the order log into a daily schedule
             active_days = []
             for _, order in df_orders.iterrows():
                 for d in range(order["Production Start (Day)"], order["Production End (Day)"]):
                     active_days.append({
                         "Day": d, 
+                        "Date": (project_start_date + timedelta(days=d)).strftime('%Y-%m-%d'),
                         "SKU in Production": order["SKU"], 
                         "Batch Qty": order["Order Qty"]
                     })
                     
             if active_days:
-                df_schedule = pd.DataFrame(active_days).sort_values(by=["Day", "SKU in Production"])
+                df_schedule = pd.DataFrame(active_days).sort_values(by=["Day"])
                 st.dataframe(df_schedule, width="stretch", hide_index=True)
-            else:
-                st.info("No production occurred during this simulation.")
                 
         with tab_metrics:
             st.markdown("#### Lead Time & Wait Time Distributions")
             
-            # Summary Metrics Table
             df_time_summary = df_orders.groupby("SKU").agg({
                 "Wait Time (Days)": ["mean", "max"],
                 "Total Cycle Time (Days)": ["mean", "max"]
             }).round(1)
             
-            df_time_summary.columns = [
-                "Avg Wait Time", "Max Wait Time", 
-                "Avg Total Cycle Time", "Max Total Cycle Time"
-            ]
+            df_time_summary.columns = ["Avg Wait Time", "Max Wait Time", "Avg Total Cycle Time", "Max Total Cycle Time"]
             st.dataframe(df_time_summary.reset_index(), width="stretch", hide_index=True)
             
-            # Distribution Box Plot
             fig_cycle = px.box(
                 df_orders, x="SKU", y="Total Cycle Time (Days)", 
                 color="SKU", points="all",
                 title="Total Cycle Time Distribution (Order Placed to WH Receipt)"
             )
-            fig_cycle.update_layout(template="plotly_white", showlegend=False)
+            fig_cycle.update_layout(template="plotly_white", showlegend=False, height=400)
             st.plotly_chart(fig_cycle, width="stretch")
             
     else:

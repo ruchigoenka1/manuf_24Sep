@@ -13,24 +13,54 @@ from pymoo.core.problem import ElementwiseProblem
 from pymoo.termination import get_termination
 
 # =========================================================================
-# 1. AUTHENTICATION & SESSION STATE CHECK
+# AUTHENTICATION CHECK
 # =========================================================================
 if not st.session_state.get("authentication_status"):
     st.warning("Please log in from the main app page.")
     st.stop()
 
-# Retrieve global settings from session state with safe fallbacks
-solver_choice = st.session_state.get('solver_choice', 'Optimizer')
-scheduling_strategy = st.session_state.get('scheduling_strategy', 'As Soon As Possible (ASAP)')
-start_date = st.session_state.get('start_date', datetime(2024, 1, 1))
-time_limit = st.session_state.get('time_limit', 120)
-ga_generations = st.session_state.get('ga_generations', 100)
-ga_pop_size = st.session_state.get('ga_pop_size', 50)
-
 if "results_df" not in st.session_state:
     st.session_state.results_df = None
     st.session_state.makespan = None
     st.session_state.penalty_msg = ""
+
+# =========================================================================
+# PAGE-SPECIFIC SIDEBAR
+# =========================================================================
+with st.sidebar:
+    st.divider()
+    st.header("⚙️ Scheduler Settings")
+    
+    start_date = st.date_input("Project Start Date", datetime(2024, 1, 1))
+
+    scheduling_strategy = st.radio(
+        "Scheduling Strategy Objective:",
+        ("As Soon As Possible (ASAP)", "Just In Time / Close to Due Date")
+    )
+
+    solver_choice = st.radio(
+        "Select Solving Engine:", 
+        ("Optimizer", "Evolutionary Algorithm")
+    )
+
+    st.markdown("---")
+    st.header("⏱️ Engine Parameters")
+
+    if solver_choice == "Optimizer":
+        time_limit = st.number_input(
+            "Optimizer Time Limit (Seconds)", 
+            min_value=10, max_value=1200, value=120, step=10,
+            help="Limits how long the solver searches. Increase if you get timeout errors."
+        )
+    else:
+        ga_generations = st.number_input(
+            "No of Generation", 
+            min_value=50, max_value=1000, value=100, step=50
+        )
+        ga_pop_size = st.number_input(
+            "Size", 
+            min_value=20, max_value=500, value=50, step=10
+        )
 
 # =========================================================================
 # 2. STEP 1: DATA ENTRY (BASE RECIPES / ORDERS)

@@ -231,6 +231,32 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 "Avg Inventory": inv_levels[sku].mean()
             })
             
+        # --- CAPTURE FINAL PENDING BACKLOG AT END OF SIMULATION ---
+        final_pending_orders = []
+        current_calc_day = sim_days # Start calculating from the final day of simulation
+        
+        # Check active job first if it's still running
+        if active_job is not None:
+            current_calc_day += active_job['remaining']
+            final_pending_orders.append({
+                "SKU": active_job['sku'],
+                "Batch Qty": active_job['qty'],
+                "Processing Days Required": active_job['remaining'],
+                "Estimated Completion Day": current_calc_day,
+                "Estimated Completion Date": project_start_date + timedelta(days=int(current_calc_day))
+            })
+            
+        # Check queued jobs in FIFO order
+        for q in factory_queue:
+            current_calc_day += q['touch_time']
+            final_pending_orders.append({
+                "SKU": q['sku'],
+                "Batch Qty": q['qty'],
+                "Processing Days Required": q['touch_time'],
+                "Estimated Completion Day": current_calc_day,
+                "Estimated Completion Date": project_start_date + timedelta(days=int(current_calc_day))
+            })
+
         # Save results to session state
         st.session_state.mts_results = {
             "kpi_results": kpi_results,
@@ -242,10 +268,10 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             "demand_history": demands,
             "wh_receipts_history": wh_receipts_history,
             "wh_pipeline_history": wh_pipeline_history,
+            "pending_orders_history": pending_orders_history,
             # ADD THIS LINE:
-            "pending_orders_history": pending_orders_history
+            "final_pending_orders": final_pending_orders
         }
-
 # =========================================================================
 # 5. DASHBOARD & VISUALIZATIONS (Persisted via Session State)
 # =========================================================================
@@ -342,7 +368,48 @@ if st.session_state.mts_results is not None:
         })
         
         st.dataframe(df_wh_ledger, width="stretch", hide_index=True)
+    # =========================================================================
+    # NEW BLOCK: PENDING BACKLOG & ESTIMATED COMPLETION TIMELINE
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("⏳ Factory Backlog & Order Due Dates")
+    st.markdown("Shows the active pending orders remaining in the factory queue at the end of the simulation period, along with their SKU-wise processing requirements and estimated completion due dates based on FIFO execution.")
+    
+    pending_list = res.get("final_pending_orders", [])
+    
+    if pending_list:
+        df_pending_summary = pd.DataFrame(pending_list)
+        
+        # 1. Summary Processing Days by SKU and Total
+        st.markdown("#### Total Processing Days Required for Pending Orders")
+        sku_processing_days = df_pending_summary.groupby("SKU")["Processing Days Required"].sum().reset_index()
+        total_all_skus = sku_processing_days["Processing Days Required"].sum()
+        
+        # Append a Total row
+        total_row = pd.DataFrame([{"SKU": "TOTAL (All SKUs)", "Processing Days Required": total_all_skus}])
+        sku_processing_days = pd.concat([sku_processing_days, total_row], ignore_index=True)
+        
+        col_t1, col_t2 = st.columns([2, 1])
+        with col_t1:
+            st.dataframe(sku_processing_days, width="stretch", hide_index=True)
+        with col_t2:
+            st.metric(
+                label="Total Days to Clear All Backlog", 
+                value=f"{total_all_skus} Days",
+                help="Sequential single-machine processing time required to finish all pending orders."
+            )
+            
+        # 2. Detailed Pending Orders Table with Due Dates
+        st.markdown("#### Pending Orders Queue & Estimated Due Dates")
+        # Format the date column nicely
+        df_pending_display = df_pending_summary.copy()
+        df_pending_display["Estimated Completion Date"] = pd.to_datetime(df_pending_display["Estimated Completion Date"]).dt.strftime('%Y-%m-%d')
+        
+        st.dataframe(df_pending_display, width="stretch", hide_index=True)
+    else:
+        st.success("🎉 Zero Backlog! The factory queue is completely clear at the end of the simulation.")
 
+    
     
     st.subheader("🏭 Manufacturing & Order Lifecycle Analysis")
     

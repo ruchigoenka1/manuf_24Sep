@@ -66,6 +66,21 @@ edited_df = st.data_editor(
 )
 
 # =========================================================================
+# CAPACITY UTILIZATION CHECK
+# =========================================================================
+total_util_pct = 0
+for _, row in edited_df.iterrows():
+    touch_time = float(row["Factory Touch Time (Days)"])
+    if touch_time > 0:
+        daily_capacity = float(row["Order Qty (Q)"]) / touch_time
+        total_util_pct += (float(row["Avg Demand"]) / daily_capacity) * 100
+
+if total_util_pct > 100:
+    st.error(f"⚠️ **Capacity Overload:** With this data, the estimated factory capacity utilization is **{total_util_pct:.1f}%**. The factory will constantly run behind demand.")
+else:
+    st.info(f"✅ **Capacity Check:** With this data, the estimated factory capacity utilization is **{total_util_pct:.1f}%**.")
+
+# =========================================================================
 # 4. FINITE CAPACITY SIMULATION ENGINE (FIFO)
 # =========================================================================
 st.markdown("---")

@@ -192,8 +192,11 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                     wip += active_job['qty']
                 factory_wip_history[sku][day] = wip
                 
-                # ADD THIS LINE TO TRACK PIPELINE:
-                wh_pipeline_history[sku][day] = sum(p['qty'] for p in pipeline if p['sku'] == sku)
+                # # ADD THIS LINE TO TRACK PIPELINE:
+                # wh_pipeline_history[sku][day] = sum(p['qty'] for p in pipeline if p['sku'] == sku)
+                # UPDATE THIS LINE: Sum factory queue + active job + transit pipeline
+                transit_qty = sum(p['qty'] for p in pipeline if p['sku'] == sku)
+                wh_pipeline_history[sku][day] = wip + transit_qty
 
         # Process KPIs
         kpi_results = []

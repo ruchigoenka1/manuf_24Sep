@@ -361,28 +361,29 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
 
         for t in base_tasks: prob += end_vars[t['id']] <= int(deadline_dict.get(t['job'], 999))
 
-        solver = pulp.PULP_CBC_CMD(timeLimit=time_limit, msg=False)
+        # PuLP 4.0+: PULP_CBC_CMD is replaced by COIN_CMD
+        solver = pulp.COIN_CMD(timeLimit=time_limit, msg=False)
         with st.spinner("Calculating exact optimal schedule..."): 
             prob.solve(solver)
         
         # PuLP 4.0+: Use prob.status instead of the return value of solve()
-        if pulp.LpStatus[prob.status] in ["Optimal", "Not Solved"] and start_vars[base_tasks[0]['id']].varValue is not None:
+        # Using pulp.value() securely fetches data from the Rust core layer
+        if pulp.LpStatus[prob.status] in ["Optimal", "Not Solved"] and pulp.value(start_vars[base_tasks[0]['id']]) is not None:
             results = []
             for t in base_tasks:
-                sel_res = [r for r in t['resources'] if assign_vars[(t['id'], r)].varValue > 0.5][0]
-                s_val, e_val = int(start_vars[t['id']].varValue), int(end_vars[t['id']].varValue)
+                sel_res = [r for r in t['resources'] if pulp.value(assign_vars[(t['id'], r)]) > 0.5][0]
+                s_val, e_val = int(pulp.value(start_vars[t['id']])), int(pulp.value(end_vars[t['id']]))
                 results.append({
                     "Job": t['job'], "Process": t['process'], "Resource": sel_res, "Duration": t['duration'],
                     "Start_Day": s_val, "End_Day": e_val,
                     "Start": pd.to_datetime(start_date) + timedelta(days=s_val), "Finish": pd.to_datetime(start_date) + timedelta(days=e_val)
                 })
             st.session_state.results_df = pd.DataFrame(results)
-            st.session_state.makespan = int(makespan.varValue)
+            st.session_state.makespan = int(pulp.value(makespan))
             st.session_state.penalty_msg = ""
         else:
             st.session_state.results_df = None
             st.error("❌ No feasible schedule found. Deadlines might be too tight.")
-
     
             
     else: # Evolutionary Algorithm

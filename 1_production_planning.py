@@ -308,18 +308,20 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         st.stop()
 
     if solver_choice == "Optimizer":
-        import re
-        
-        # Helper function to strip spaces and special characters for PuLP
-        def clean_pulp_name(name_str):
-            return re.sub(r'[^a-zA-Z0-9_]', '_', str(name_str))
-
         prob = pulp.LpProblem("Demand_Scheduling", pulp.LpMinimize)
         
-        # Wrap the name parameter in clean_pulp_name()
-        start_vars = {t['id']: pulp.LpVariable(clean_pulp_name(f"start_{t['id']}"), lowBound=0, cat='Integer') for t in base_tasks}
-        end_vars = {t['id']: pulp.LpVariable(clean_pulp_name(f"end_{t['id']}"), lowBound=0, cat='Integer') for t in base_tasks}
-        assign_vars = {(t['id'], r): pulp.LpVariable(clean_pulp_name(f"assign_{t['id']}_{r}"), cat='Binary') for t in base_tasks for r in t['resources']}
+        # Initialize dictionaries
+        start_vars = {}
+        end_vars = {}
+        assign_vars = {}
+        
+        # Create safe, purely numeric names for the solver to avoid ANY character crashes
+        for i, t in enumerate(base_tasks):
+            start_vars[t['id']] = pulp.LpVariable(f"start_v_{i}", lowBound=0, cat='Integer')
+            end_vars[t['id']] = pulp.LpVariable(f"end_v_{i}", lowBound=0, cat='Integer')
+            for j, r in enumerate(t['resources']):
+                assign_vars[(t['id'], r)] = pulp.LpVariable(f"assign_v_{i}_{j}", cat='Binary')
+                
         makespan = pulp.LpVariable("Makespan", lowBound=0, cat='Integer')
         
         if scheduling_strategy == "As Soon As Possible (ASAP)":
@@ -340,14 +342,17 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
                 if pred_id in start_vars: prob += start_vars[t['id']] >= end_vars[pred_id]
 
         M = max(1000, max(list(deadline_dict.values())) * 3) if deadline_dict else 3000
+        
+        # Add a numeric counter for sequence variables as well
+        seq_idx = 0
         for i in range(len(base_tasks)):
             for j in range(i + 1, len(base_tasks)):
                 t1, t2 = base_tasks[i], base_tasks[j]
                 common_res = set(t1['resources']).intersection(set(t2['resources']))
                 common_res.discard("INV") 
                 if common_res:
-                    # Sanitize the sequence variable name as well
-                    y = pulp.LpVariable(clean_pulp_name(f"seq_{t1['id']}_{t2['id']}"), cat='Binary')
+                    seq_idx += 1
+                    y = pulp.LpVariable(f"seq_v_{seq_idx}", cat='Binary')
                     for r in common_res:
                         c12 = int(df_changeover.loc[t1['id'], t2['id']]) if t1['id'] in df_changeover.index and t2['id'] in df_changeover.columns else 0
                         c21 = int(df_changeover.loc[t2['id'], t1['id']]) if t2['id'] in df_changeover.index and t1['id'] in df_changeover.columns else 0
@@ -375,6 +380,8 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         else:
             st.session_state.results_df = None
             st.error("❌ No feasible schedule found. Deadlines might be too tight.")
+
+    
             
     else: # Evolutionary Algorithm
         def decode_demand(priorities, t_list, s_dict, d_dict, c_df, strategy):

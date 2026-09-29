@@ -66,6 +66,7 @@ with st.sidebar:
 # =========================================================================
 prod_plan_page = st.Page("1_production_planning.py", title="Production Planning", icon="🗓️")
 plot_page = st.Page("plot_page.py", title="Closing Balance Plotter", icon="📈")
+hist_inventory_audit_page = st.Page("inventory_audit.py", title="Historical Comparison", icon="⚖️")
 # dem_hist_page = st.Page("2_Demand_Histogram.py", title="Demand Histogram Simulator", icon="📊")
 # dem_analysis_page = st.Page("3_Demand_Analysis.py", title="Demand Analysis", icon="📈")
 # cont_review_page = st.Page("4_Continuous_Review.py", title="Continuous Review Simulator", icon="🔄")
@@ -78,6 +79,7 @@ plot_page = st.Page("plot_page.py", title="Closing Balance Plotter", icon="📈"
 pg = st.navigation([
     prod_plan_page, 
     plot_page,
+    hist_inventory_audit_page,
     # dem_hist_page, 
     # dem_analysis_page, 
     # cont_review_page, 

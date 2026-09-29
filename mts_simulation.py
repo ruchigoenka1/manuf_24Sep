@@ -97,6 +97,10 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
         sales[sku] = np.zeros(sim_days)
         inv_levels[sku] = np.zeros(sim_days)
         factory_wip_history[sku] = np.zeros(sim_days)
+
+    # Add these two lines right after factory_wip_history[sku] = np.zeros(sim_days)
+    wh_receipts_history = {s: np.zeros(sim_days) for s in params.keys()}
+    wh_pipeline_history = {s: np.zeros(sim_days) for s in params.keys()}
     
     # State tracking
     pipeline = [] # Transit to WH
@@ -118,6 +122,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             for p in pipeline[:]:
                 if p['arrive_at'] <= day:
                     current_inv[p['sku']] += p['qty']
+                    wh_receipts_history[p['sku']][day] += p['qty'] # ADD THIS LINE
                     pipeline.remove(p)
                     
             # B. Fulfill Demand
@@ -180,12 +185,15 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 active_job = factory_queue.pop(0) # FIFO Pull
                 active_job['start_day'] = day
                 
-            # F. Record Daily WIP Tracker
+            # F. Record Daily WIP & Pipeline Tracker
             for sku in params.keys():
                 wip = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
                 if active_job and active_job['sku'] == sku:
                     wip += active_job['qty']
                 factory_wip_history[sku][day] = wip
+                
+                # ADD THIS LINE TO TRACK PIPELINE:
+                wh_pipeline_history[sku][day] = sum(p['qty'] for p in pipeline if p['sku'] == sku)
 
         # Process KPIs
         kpi_results = []
@@ -210,7 +218,11 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             "factory_wip_history": factory_wip_history,
             "master_order_log": master_order_log,
             "sim_days": sim_days,
-            "num_skus_simulated": len(edited_df)
+            "num_skus_simulated": len(edited_df),
+            # ADD THESE 3 LINES:
+            "demand_history": demands,
+            "wh_receipts_history": wh_receipts_history,
+            "wh_pipeline_history": wh_pipeline_history
         }
 
 # =========================================================================
@@ -262,6 +274,41 @@ if st.session_state.mts_results is not None:
     # 6. MANUFACTURING & ORDER LOGS
     # =========================================================================
     st.markdown("---")
+
+    # =========================================================================
+    # NEW BLOCK: WAREHOUSE DAILY LEDGER
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("📦 Daily Warehouse Ledger")
+    
+    sku_list_wh = list(res['inv_levels'].keys())
+    selected_wh_sku = st.selectbox("Select SKU to view daily warehouse movement:", sku_list_wh)
+    
+    if selected_wh_sku:
+        days_array = np.arange(1, res['sim_days'] + 1)
+        closing = res['inv_levels'][selected_wh_sku]
+        demands_arr = res['demand_history'][selected_wh_sku]
+        receipts_arr = res['wh_receipts_history'][selected_wh_sku]
+        pipeline_arr = res['wh_pipeline_history'][selected_wh_sku]
+        
+        # Reverse-calculate Opening Balance (Opening = Closing + Demand - Receipts)
+        opening = np.zeros(res['sim_days'])
+        opening[0] = closing[0] + demands_arr[0] - receipts_arr[0]
+        for i in range(1, res['sim_days']):
+            opening[i] = closing[i-1]
+            
+        df_wh_ledger = pd.DataFrame({
+            "Day": days_array,
+            "Opening Balance": opening.astype(int),
+            "Daily Demand": demands_arr.astype(int),
+            "Units Received": receipts_arr.astype(int),
+            "Closing Balance": closing.astype(int),
+            "Pipeline (In Transit)": pipeline_arr.astype(int)
+        })
+        
+        st.dataframe(df_wh_ledger, width="stretch", hide_index=True)
+
+    
     st.subheader("🏭 Manufacturing & Order Lifecycle Analysis")
     
     if res['master_order_log']:

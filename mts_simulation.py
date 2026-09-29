@@ -52,7 +52,7 @@ st.info("💡 **Tip:** If 'Dist Type' is Normal, 'Variation' is Standard Deviati
 edited_df = st.data_editor(
     df_default, 
     num_rows="dynamic", 
-    use_container_width=True,
+    width="stretch",
     column_config={
         "Dist Type": st.column_config.SelectboxColumn(options=["Normal", "Uniform"])
     }
@@ -175,7 +175,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             "Avg Inventory": "{:.1f}"
         }).background_gradient(subset=['Fill Rate (%)'], cmap='RdYlGn', vmin=80, vmax=100)
           .background_gradient(subset=['Stockout Days'], cmap='Reds', vmin=0, vmax=sim_days*0.1),
-        use_container_width=True, hide_index=True
+        width="stretch", hide_index=True
     )
     
     st.markdown("---")
@@ -205,19 +205,19 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        st.plotly_chart(fig_wh, use_container_width=True)
+        st.plotly_chart(fig_wh, width="stretch")
         
     with chart_col2:
         st.markdown("#### Factory: Active Order Book (WIP)")
         st.caption("Volume of stock currently in the 'Touch Time' production phase.")
         fig_fac = go.Figure()
         for sku, data in factory_wip_history.items():
-            # Use step-line formatting to clearly show batch orders entering and leaving the factory
+            # Use 'hv' (horizontal-vertical) step line for plot rendering 
             fig_fac.add_trace(go.Scatter(
                 x=np.arange(1, sim_days + 1), 
                 y=data, 
                 mode='lines', 
-                line_shape='step',
+                line_shape='hv',
                 name=sku,
                 opacity=0.8
             ))
@@ -229,7 +229,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-        st.plotly_chart(fig_fac, use_container_width=True)
+        st.plotly_chart(fig_fac, width="stretch")
         
     st.markdown("---")
     
@@ -259,4 +259,4 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 barmode='overlay',
                 hovermode="x unified"
             )
-            st.plotly_chart(fig_drill, use_container_width=True)
+            st.plotly_chart(fig_drill, width="stretch")

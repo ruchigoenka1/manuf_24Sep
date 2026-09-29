@@ -64,7 +64,7 @@ with st.sidebar:
 # =========================================================================
 # 2. MIDDLE SIDEBAR: NAVIGATION MENU
 # =========================================================================
-prod_plan_page = st.Page("1_Production_Planning.py", title="Production Planning", icon="🗓️")
+prod_plan_page = st.Page("1_production_planning.py", title="Production Planning", icon="🗓️")
 plot_page = st.Page("plot_page.py", title="Closing Balance Plotter", icon="📈")
 # dem_hist_page = st.Page("2_Demand_Histogram.py", title="Demand Histogram Simulator", icon="📊")
 # dem_analysis_page = st.Page("3_Demand_Analysis.py", title="Demand Analysis", icon="📈")

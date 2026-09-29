@@ -72,6 +72,9 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     factory_wip_history = {}
     demand_history = {}
     
+    # ADD THIS NEW LINE:
+    master_order_log = [] 
+    
     with st.spinner("Simulating supply chain physics..."):
         for index, row in edited_df.iterrows():
             sku = str(row["SKU"])
@@ -128,10 +131,25 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 
                 if inv_position <= rop:
                     # Place order to factory
-                    ready_at = day + touch_time
-                    arrive_at = ready_at + transit_time
+                    prod_start = day
+                    ready_at = prod_start + touch_time
+                    # Arrives at WH the next day after production ends
+                    arrive_at = ready_at + 1 
+                    
                     pipeline.append({'qty': order_q, 'ready_day': ready_at, 'arrive_day': arrive_at})
                     active_factory_orders.append({'qty': order_q, 'ready_day': ready_at})
+                    
+                    # ADD THIS NEW BLOCK: Record order lifecycle
+                    master_order_log.append({
+                        "SKU": sku,
+                        "Order Placed (Day)": day,
+                        "Production Start (Day)": prod_start,
+                        "Production End (Day)": ready_at,
+                        "WH Receipt (Day)": arrive_at,
+                        "Order Qty": order_q,
+                        "Wait Time (Days)": prod_start - day,
+                        "Total Cycle Time (Days)": arrive_at - day
+                    })
                 
                 # D. Calculate active Factory Order Book (WIP)
                 # Remove completed factory orders
@@ -260,3 +278,75 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 hovermode="x unified"
             )
             st.plotly_chart(fig_drill, width="stretch")
+
+    # =========================================================================
+    # 6. MANUFACTURING & ORDER LOGS
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("🏭 Manufacturing & Order Lifecycle Analysis")
+    
+    if master_order_log:
+        df_orders = pd.DataFrame(master_order_log)
+        
+        tab_sku, tab_sched, tab_metrics = st.tabs([
+            "📋 SKU-Wise Order Ledger", 
+            "📅 Daily Factory Schedule", 
+            "⏱️ Time Distribution Analytics"
+        ])
+        
+        with tab_sku:
+            st.markdown("#### Complete Factory Order Book")
+            st.caption("Tracks exactly when each batch was requested, produced, and received at the warehouse.")
+            selected_log_sku = st.selectbox("Filter Ledger by SKU:", ["All"] + df_default["SKU"].tolist())
+            
+            if selected_log_sku == "All":
+                st.dataframe(df_orders, width="stretch", hide_index=True)
+            else:
+                st.dataframe(df_orders[df_orders["SKU"] == selected_log_sku], width="stretch", hide_index=True)
+                
+        with tab_sched:
+            st.markdown("#### Active Production Schedule")
+            st.caption("Shows which SKUs are actively being manufactured on any given day.")
+            
+            # Expand the order log into a daily schedule
+            active_days = []
+            for _, order in df_orders.iterrows():
+                for d in range(order["Production Start (Day)"], order["Production End (Day)"]):
+                    active_days.append({
+                        "Day": d, 
+                        "SKU in Production": order["SKU"], 
+                        "Batch Qty": order["Order Qty"]
+                    })
+                    
+            if active_days:
+                df_schedule = pd.DataFrame(active_days).sort_values(by=["Day", "SKU in Production"])
+                st.dataframe(df_schedule, width="stretch", hide_index=True)
+            else:
+                st.info("No production occurred during this simulation.")
+                
+        with tab_metrics:
+            st.markdown("#### Lead Time & Wait Time Distributions")
+            
+            # Summary Metrics Table
+            df_time_summary = df_orders.groupby("SKU").agg({
+                "Wait Time (Days)": ["mean", "max"],
+                "Total Cycle Time (Days)": ["mean", "max"]
+            }).round(1)
+            
+            df_time_summary.columns = [
+                "Avg Wait Time", "Max Wait Time", 
+                "Avg Total Cycle Time", "Max Total Cycle Time"
+            ]
+            st.dataframe(df_time_summary.reset_index(), width="stretch", hide_index=True)
+            
+            # Distribution Box Plot
+            fig_cycle = px.box(
+                df_orders, x="SKU", y="Total Cycle Time (Days)", 
+                color="SKU", points="all",
+                title="Total Cycle Time Distribution (Order Placed to WH Receipt)"
+            )
+            fig_cycle.update_layout(template="plotly_white", showlegend=False)
+            st.plotly_chart(fig_cycle, width="stretch")
+            
+    else:
+        st.info("No orders were placed during this simulation period (Inventory never dropped below ROP).")

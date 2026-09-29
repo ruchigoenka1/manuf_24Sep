@@ -349,9 +349,13 @@ if st.session_state.mts_results is not None:
     st.subheader("📋 Daily Pending Factory Orders (Backlog - Units)")
     st.markdown("Shows the total volume of units for each SKU that are currently waiting in the queue or being manufactured on each simulation day.")
     
-    pending_matrix_data = {"Day": np.arange(1, res['sim_days'] + 1)}
-    for sku, arr in res['pending_orders_history'].items():
-        pending_matrix_data[sku] = arr.astype(int)
+    pending_days_data = {"Day": np.arange(1, res['sim_days'] + 1)}
+    total_days_arr = np.zeros(res['sim_days'])
+    
+    # Update this line to use .get()
+    for sku, arr in res.get('pending_days_history', {}).items():
+        pending_days_data[f"{sku} (Days)"] = arr.astype(int)
+        total_days_arr += arr
         
     df_pending_matrix = pd.DataFrame(pending_matrix_data)
     st.dataframe(df_pending_matrix, width="stretch", hide_index=True)

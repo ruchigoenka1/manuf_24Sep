@@ -12,6 +12,10 @@ if not st.session_state.get("authentication_status"):
     st.warning("Please log in from the main app page.")
     st.stop()
 
+# Initialize session state for MTS simulation results
+if "mts_results" not in st.session_state:
+    st.session_state.mts_results = None
+
 # Get global start date for Gantt Chart mapping
 project_start_date = st.session_state.get('start_date', datetime.today())
 
@@ -199,13 +203,26 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 "Avg Inventory": inv_levels[sku].mean()
             })
             
-    # =========================================================================
-    # 5. DASHBOARD & VISUALIZATIONS
-    # =========================================================================
-    st.success(f"Simulation completed for {int(sim_days)} days across {len(edited_df)} SKUs.")
+        # Save results to session state
+        st.session_state.mts_results = {
+            "kpi_results": kpi_results,
+            "inv_levels": inv_levels,
+            "factory_wip_history": factory_wip_history,
+            "master_order_log": master_order_log,
+            "sim_days": sim_days,
+            "num_skus_simulated": len(edited_df)
+        }
+
+# =========================================================================
+# 5. DASHBOARD & VISUALIZATIONS (Persisted via Session State)
+# =========================================================================
+if st.session_state.mts_results is not None:
+    res = st.session_state.mts_results
+    
+    st.success(f"Simulation completed for {int(res['sim_days'])} days across {res['num_skus_simulated']} SKUs.")
     
     st.subheader("📊 Warehouse KPI Scorecard")
-    df_kpi = pd.DataFrame(kpi_results)
+    df_kpi = pd.DataFrame(res['kpi_results'])
     
     st.dataframe(
         df_kpi.style.format({
@@ -215,7 +232,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             "Max Inventory": "{:.0f}",
             "Avg Inventory": "{:.1f}"
         }).background_gradient(subset=['Fill Rate (%)'], cmap='RdYlGn', vmin=80, vmax=100)
-          .background_gradient(subset=['Stockout Days'], cmap='Reds', vmin=0, vmax=sim_days*0.1),
+          .background_gradient(subset=['Stockout Days'], cmap='Reds', vmin=0, vmax=res['sim_days']*0.1),
         width="stretch", hide_index=True
     )
     
@@ -226,8 +243,8 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     with chart_col1:
         st.markdown("#### Warehouse: Closing Inventory Level")
         fig_wh = go.Figure()
-        for sku, data in inv_levels.items():
-            fig_wh.add_trace(go.Scatter(x=np.arange(1, sim_days + 1), y=data, mode='lines', name=sku, opacity=0.8))
+        for sku, data in res['inv_levels'].items():
+            fig_wh.add_trace(go.Scatter(x=np.arange(1, res['sim_days'] + 1), y=data, mode='lines', name=sku, opacity=0.8))
         fig_wh.add_hline(y=0, line_width=1, line_color="black")
         fig_wh.update_layout(xaxis_title="Simulation Day", yaxis_title="Units on Hand", template="plotly_white", height=400, hovermode="x unified")
         st.plotly_chart(fig_wh, width="stretch")
@@ -236,8 +253,8 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
         st.markdown("#### Factory: Active & Queued Backlog")
         st.caption("Volume waiting in queue + actively on the machine.")
         fig_fac = go.Figure()
-        for sku, data in factory_wip_history.items():
-            fig_fac.add_trace(go.Scatter(x=np.arange(1, sim_days + 1), y=data, mode='lines', line_shape='hv', name=sku, opacity=0.8))
+        for sku, data in res['factory_wip_history'].items():
+            fig_fac.add_trace(go.Scatter(x=np.arange(1, res['sim_days'] + 1), y=data, mode='lines', line_shape='hv', name=sku, opacity=0.8))
         fig_fac.update_layout(xaxis_title="Simulation Day", yaxis_title="Units Backlogged", template="plotly_white", height=400, hovermode="x unified")
         st.plotly_chart(fig_fac, width="stretch")
         
@@ -247,8 +264,8 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     st.markdown("---")
     st.subheader("🏭 Manufacturing & Order Lifecycle Analysis")
     
-    if master_order_log:
-        df_orders = pd.DataFrame(master_order_log)
+    if res['master_order_log']:
+        df_orders = pd.DataFrame(res['master_order_log'])
         
         tab_gantt, tab_sku, tab_sched, tab_metrics = st.tabs([
             "📊 Factory Gantt Chart",
@@ -261,11 +278,10 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             st.markdown("#### Factory Manufacturing Schedule")
             st.caption("Visualizes the sequential FIFO processing on the single factory line.")
             
-            # Map simulation days to actual dates for the Gantt chart
             df_gantt = df_orders.copy()
             df_gantt["Start Date"] = project_start_date + pd.to_timedelta(df_gantt["Production Start (Day)"], unit="d")
             df_gantt["Finish Date"] = project_start_date + pd.to_timedelta(df_gantt["Production End (Day)"], unit="d")
-            df_gantt["Order Formatted"] = df_gantt.apply(lambda row: f"{row['Order Qty']} units", axis=1)
+            df_gantt["Order Formatted"] = df_gantt.apply(lambda r: f"{r['Order Qty']} units", axis=1)
 
             fig_gantt = px.timeline(
                 df_gantt, 
@@ -282,7 +298,8 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
 
         with tab_sku:
             st.markdown("#### Complete Factory Order Book")
-            selected_log_sku = st.selectbox("Filter Ledger by SKU:", ["All"] + df_default["SKU"].tolist())
+            sku_list = list(res['inv_levels'].keys())
+            selected_log_sku = st.selectbox("Filter Ledger by SKU:", ["All"] + sku_list)
             
             if selected_log_sku == "All":
                 st.dataframe(df_orders, width="stretch", hide_index=True)

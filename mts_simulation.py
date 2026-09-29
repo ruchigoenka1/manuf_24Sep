@@ -98,12 +98,10 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
         inv_levels[sku] = np.zeros(sim_days)
         factory_wip_history[sku] = np.zeros(sim_days)
 
-    # Add these two lines right after factory_wip_history[sku] = np.zeros(sim_days)
     wh_receipts_history = {s: np.zeros(sim_days) for s in params.keys()}
     wh_pipeline_history = {s: np.zeros(sim_days) for s in params.keys()}
-
-    # ADD THIS NEW LINE:
     pending_orders_history = {s: np.zeros(sim_days) for s in params.keys()}
+    pending_days_history = {s: np.zeros(sim_days) for s in params.keys()}
     
     # State tracking
     pipeline = [] # Transit to WH
@@ -125,7 +123,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             for p in pipeline[:]:
                 if p['arrive_at'] <= day:
                     current_inv[p['sku']] += p['qty']
-                    wh_receipts_history[p['sku']][day] += p['qty'] # ADD THIS LINE
+                    wh_receipts_history[p['sku']][day] += p['qty']
                     pipeline.remove(p)
                     
             # B. Fulfill Demand
@@ -188,29 +186,21 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 active_job = factory_queue.pop(0) # FIFO Pull
                 active_job['start_day'] = day
                 
-            # # F. Record Daily WIP & Pipeline Tracker
-            # for sku in params.keys():
-            #     wip = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
-            #     if active_job and active_job['sku'] == sku:
-            #         wip += active_job['qty']
-            #     factory_wip_history[sku][day] = wip
-                
-            #     # # ADD THIS LINE TO TRACK PIPELINE:
-            #     # wh_pipeline_history[sku][day] = sum(p['qty'] for p in pipeline if p['sku'] == sku)
-            #     # UPDATE THIS LINE: Sum factory queue + active job + transit pipeline
-            #     transit_qty = sum(p['qty'] for p in pipeline if p['sku'] == sku)
-            #     wh_pipeline_history[sku][day] = wip + transit_qty
-            
             # F. Record Daily WIP & Pipeline Tracker
             for sku in params.keys():
                 queue_qty = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
                 active_qty = active_job['qty'] if (active_job and active_job['sku'] == sku) else 0
                 
+                # Calculate pending days
+                queue_days = sum(q['remaining'] for q in factory_queue if q['sku'] == sku)
+                active_days = active_job['remaining'] if (active_job and active_job['sku'] == sku) else 0
+                
                 total_wip = queue_qty + active_qty
                 factory_wip_history[sku][day] = total_wip
-                
-                # ADD THIS LINE TO TRACK PENDING BACKLOG VOLUME:
                 pending_orders_history[sku][day] = total_wip
+                
+                # Track pending days
+                pending_days_history[sku][day] = queue_days + active_days
                 
                 transit_qty = sum(p['qty'] for p in pipeline if p['sku'] == sku)
                 wh_pipeline_history[sku][day] = total_wip + transit_qty
@@ -233,9 +223,8 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             
         # --- CAPTURE FINAL PENDING BACKLOG AT END OF SIMULATION ---
         final_pending_orders = []
-        current_calc_day = sim_days # Start calculating from the final day of simulation
+        current_calc_day = sim_days 
         
-        # Check active job first if it's still running
         if active_job is not None:
             current_calc_day += active_job['remaining']
             final_pending_orders.append({
@@ -246,7 +235,6 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 "Estimated Completion Date": project_start_date + timedelta(days=int(current_calc_day))
             })
             
-        # Check queued jobs in FIFO order
         for q in factory_queue:
             current_calc_day += q['touch_time']
             final_pending_orders.append({
@@ -269,9 +257,10 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
             "wh_receipts_history": wh_receipts_history,
             "wh_pipeline_history": wh_pipeline_history,
             "pending_orders_history": pending_orders_history,
-            # ADD THIS LINE:
+            "pending_days_history": pending_days_history,
             "final_pending_orders": final_pending_orders
         }
+
 # =========================================================================
 # 5. DASHBOARD & VISUALIZATIONS (Persisted via Session State)
 # =========================================================================
@@ -318,27 +307,75 @@ if st.session_state.mts_results is not None:
         st.plotly_chart(fig_fac, width="stretch")
         
     # =========================================================================
-    # 6. MANUFACTURING & ORDER LOGS
+    # 6. PENDING BACKLOG & ESTIMATED COMPLETION TIMELINE
     # =========================================================================
     st.markdown("---")
+    st.subheader("⏳ Factory Backlog & Order Due Dates")
+    st.markdown("Shows the active pending orders remaining in the factory queue at the end of the simulation period, along with their SKU-wise processing requirements and estimated completion due dates based on FIFO execution.")
+    
+    pending_list = res.get("final_pending_orders", [])
+    
+    if pending_list:
+        df_pending_summary = pd.DataFrame(pending_list)
+        
+        st.markdown("#### Total Processing Days Required for Pending Orders")
+        sku_processing_days = df_pending_summary.groupby("SKU")["Processing Days Required"].sum().reset_index()
+        total_all_skus = sku_processing_days["Processing Days Required"].sum()
+        
+        total_row = pd.DataFrame([{"SKU": "TOTAL (All SKUs)", "Processing Days Required": total_all_skus}])
+        sku_processing_days = pd.concat([sku_processing_days, total_row], ignore_index=True)
+        
+        col_t1, col_t2 = st.columns([2, 1])
+        with col_t1:
+            st.dataframe(sku_processing_days, width="stretch", hide_index=True)
+        with col_t2:
+            st.metric(
+                label="Total Days to Clear All Backlog", 
+                value=f"{total_all_skus} Days",
+                help="Sequential single-machine processing time required to finish all pending orders."
+            )
+            
+        st.markdown("#### Pending Orders Queue & Estimated Due Dates")
+        df_pending_display = df_pending_summary.copy()
+        df_pending_display["Estimated Completion Date"] = pd.to_datetime(df_pending_display["Estimated Completion Date"]).dt.strftime('%Y-%m-%d')
+        st.dataframe(df_pending_display, width="stretch", hide_index=True)
+    else:
+        st.success("🎉 Zero Backlog! The factory queue is completely clear at the end of the simulation.")
 
     # =========================================================================
-    # NEW BLOCK: WAREHOUSE DAILY LEDGER
-    # =========================================================================
-    # =========================================================================
-    # NEW BLOCK: DAILY PENDING ORDERS TABLE
+    # 7. DAILY PENDING ORDERS & BACKLOG TABLES
     # =========================================================================
     st.markdown("---")
-    st.subheader("📋 Daily Pending Factory Orders (Backlog)")
+    st.subheader("📋 Daily Pending Factory Orders (Backlog - Units)")
     st.markdown("Shows the total volume of units for each SKU that are currently waiting in the queue or being manufactured on each simulation day.")
     
-    # Build a consolidated dataframe where rows are Days and columns are SKUs
     pending_matrix_data = {"Day": np.arange(1, res['sim_days'] + 1)}
     for sku, arr in res['pending_orders_history'].items():
         pending_matrix_data[sku] = arr.astype(int)
         
     df_pending_matrix = pd.DataFrame(pending_matrix_data)
     st.dataframe(df_pending_matrix, width="stretch", hide_index=True)
+
+    st.markdown("---")
+    st.subheader("⏱️ Daily Factory Backlog (Processing Days)")
+    st.markdown("Shows the total manufacturing time (in days) required to clear the pending orders for each SKU on any given day, plus the estimated day the factory will be completely free.")
+    
+    pending_days_data = {"Day": np.arange(1, res['sim_days'] + 1)}
+    total_days_arr = np.zeros(res['sim_days'])
+    
+    for sku, arr in res['pending_days_history'].items():
+        pending_days_data[f"{sku} (Days)"] = arr.astype(int)
+        total_days_arr += arr
+        
+    pending_days_data["Total Backlog (Days)"] = total_days_arr.astype(int)
+    pending_days_data["Estimated Clear Day"] = pending_days_data["Day"] + pending_days_data["Total Backlog (Days)"]
+    
+    df_pending_days_matrix = pd.DataFrame(pending_days_data)
+    st.dataframe(df_pending_days_matrix, width="stretch", hide_index=True)
+
+    # =========================================================================
+    # 8. WAREHOUSE LEDGER
+    # =========================================================================
     st.markdown("---")
     st.subheader("📦 Daily Warehouse Ledger")
     
@@ -352,7 +389,6 @@ if st.session_state.mts_results is not None:
         receipts_arr = res['wh_receipts_history'][selected_wh_sku]
         pipeline_arr = res['wh_pipeline_history'][selected_wh_sku]
         
-        # Reverse-calculate Opening Balance (Opening = Closing + Demand - Receipts)
         opening = np.zeros(res['sim_days'])
         opening[0] = closing[0] + demands_arr[0] - receipts_arr[0]
         for i in range(1, res['sim_days']):
@@ -368,10 +404,11 @@ if st.session_state.mts_results is not None:
         })
         
         st.dataframe(df_wh_ledger, width="stretch", hide_index=True)
-    
 
-    
-    
+    # =========================================================================
+    # 9. MANUFACTURING & ORDER LIFECYCLE LOGS
+    # =========================================================================
+    st.markdown("---")
     st.subheader("🏭 Manufacturing & Order Lifecycle Analysis")
     
     if res['master_order_log']:
@@ -408,8 +445,7 @@ if st.session_state.mts_results is not None:
 
         with tab_sku:
             st.markdown("#### Complete Factory Order Book")
-            sku_list = list(res['inv_levels'].keys())
-            selected_log_sku = st.selectbox("Filter Ledger by SKU:", ["All"] + sku_list)
+            selected_log_sku = st.selectbox("Filter Ledger by SKU:", ["All"] + sku_list_wh)
             
             if selected_log_sku == "All":
                 st.dataframe(df_orders, width="stretch", hide_index=True)

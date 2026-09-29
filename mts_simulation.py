@@ -109,14 +109,12 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
     active_job = None # Currently on the machine
     master_order_log = []
     
-    # Pre-load initial WIP into transit pipeline to avoid blocking the factory on day 1
     for _, row in edited_df.iterrows():
         init_pipe = int(row["Initial Pipeline (WIP)"])
         if init_pipe > 0:
             pipeline.append({'sku': str(row["SKU"]), 'qty': init_pipe, 'arrive_at': 1})
 
     with st.spinner("Simulating finite-capacity factory physics..."):
-        # Master Daily Loop
         for day in range(sim_days):
             
             # A. Receive incoming shipments to WH
@@ -136,7 +134,6 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 
             # C. Check Inventory Position & Trigger Orders
             for sku, p_data in params.items():
-                # On order = Factory Queue + Active Job + Pipeline
                 q_qty = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
                 act_qty = active_job['qty'] if (active_job and active_job['sku'] == sku) else 0
                 pipe_qty = sum(p['qty'] for p in pipeline if p['sku'] == sku)
@@ -144,7 +141,6 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 inv_position = current_inv[sku] + q_qty + act_qty + pipe_qty
                 
                 if inv_position <= p_data["rop"]:
-                    # Enter the back of the line (FIFO)
                     factory_queue.append({
                         'sku': sku,
                         'qty': p_data["order_q"],
@@ -153,14 +149,13 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                         'order_day': day
                     })
             
-            # D. Factory Processing (Single Machine)
+            # D. Factory Processing
             if active_job is not None:
                 active_job['remaining'] -= 1
                 
                 if active_job['remaining'] <= 0:
-                    # Job finishes today
                     ready_at = day
-                    arrive_at = ready_at + 1 # Arrives at WH next day
+                    arrive_at = ready_at + 1 
                     
                     pipeline.append({
                         'sku': active_job['sku'], 
@@ -179,27 +174,24 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                         "Total Cycle Time (Days)": arrive_at - active_job['order_day']
                     })
                     
-                    active_job = None # Clear machine
+                    active_job = None 
             
-            # E. Pull next job if idle
+            # E. Pull next job
             if active_job is None and len(factory_queue) > 0:
-                active_job = factory_queue.pop(0) # FIFO Pull
+                active_job = factory_queue.pop(0) 
                 active_job['start_day'] = day
                 
-            # F. Record Daily WIP & Pipeline Tracker
+            # F. Record Daily WIP, Pipeline & Processing Days Tracker
             for sku in params.keys():
                 queue_qty = sum(q['qty'] for q in factory_queue if q['sku'] == sku)
                 active_qty = active_job['qty'] if (active_job and active_job['sku'] == sku) else 0
                 
-                # Calculate pending days
                 queue_days = sum(q['remaining'] for q in factory_queue if q['sku'] == sku)
                 active_days = active_job['remaining'] if (active_job and active_job['sku'] == sku) else 0
                 
                 total_wip = queue_qty + active_qty
                 factory_wip_history[sku][day] = total_wip
                 pending_orders_history[sku][day] = total_wip
-                
-                # Track pending days
                 pending_days_history[sku][day] = queue_days + active_days
                 
                 transit_qty = sum(p['qty'] for p in pipeline if p['sku'] == sku)
@@ -221,7 +213,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 "Avg Inventory": inv_levels[sku].mean()
             })
             
-        # --- CAPTURE FINAL PENDING BACKLOG AT END OF SIMULATION ---
+        # Final Backlog Capture
         final_pending_orders = []
         current_calc_day = sim_days 
         
@@ -245,7 +237,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
                 "Estimated Completion Date": project_start_date + timedelta(days=int(current_calc_day))
             })
 
-        # Save results to session state
+        # Save to session state
         st.session_state.mts_results = {
             "kpi_results": kpi_results,
             "inv_levels": inv_levels,
@@ -262,7 +254,7 @@ if st.button("🚀 Run MTS Simulation", type="primary"):
         }
 
 # =========================================================================
-# 5. DASHBOARD & VISUALIZATIONS (Persisted via Session State)
+# 5. DASHBOARD & VISUALIZATIONS
 # =========================================================================
 if st.session_state.mts_results is not None:
     res = st.session_state.mts_results
@@ -349,10 +341,7 @@ if st.session_state.mts_results is not None:
     st.subheader("📋 Daily Pending Factory Orders (Backlog - Units)")
     st.markdown("Shows the total volume of units for each SKU that are currently waiting in the queue or being manufactured on each simulation day.")
     
-    # Initialize dictionary first
     pending_matrix_data = {"Day": np.arange(1, res['sim_days'] + 1)}
-    
-    # Safely extract history
     orders_hist = res.get('pending_orders_history', {})
     if orders_hist:
         for sku, arr in orders_hist.items():
@@ -365,11 +354,9 @@ if st.session_state.mts_results is not None:
     st.subheader("⏱️ Daily Factory Backlog (Processing Days)")
     st.markdown("Shows the total manufacturing time (in days) required to clear the pending orders for each SKU on any given day, plus the estimated day the factory will be completely free.")
     
-    # Initialize dictionary first
     pending_days_data = {"Day": np.arange(1, res['sim_days'] + 1)}
     total_days_arr = np.zeros(res['sim_days'])
     
-    # Safely extract history
     days_hist = res.get('pending_days_history', {})
     if days_hist:
         for sku, arr in days_hist.items():

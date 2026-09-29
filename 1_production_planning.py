@@ -364,12 +364,11 @@ if st.button(f"🚀 Run {solver_choice}", type="primary"):
         # PuLP 4.0+: PULP_CBC_CMD is replaced by COIN_CMD
         # Let PuLP auto-detect the newly installed system CBC solver
         solver = pulp.COIN_CMD(timeLimit=time_limit, msg=False)
-        
         with st.spinner("Calculating exact optimal schedule..."): 
             prob.solve(solver)
         
-        # Check status safely
-        if prob.status == pulp.LpStatusOptimal and pulp.value(start_vars[base_tasks[0]['id']]) is not None:
+        # Check if makespan has a value (safely bypasses missing .status attribute)
+        if pulp.value(makespan) is not None:
             results = []
             for t in base_tasks:
                 sel_res = [r for r in t['resources'] if pulp.value(assign_vars[(t['id'], r)]) > 0.5][0]

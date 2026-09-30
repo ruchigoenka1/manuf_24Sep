@@ -76,8 +76,92 @@ if total_util_pct > 100:
 else:
     st.info(f"✅ **Capacity Check:** With this data, the estimated factory capacity utilization is **{total_util_pct:.1f}%**.")
 
+
 # =========================================================================
-# 4. CORE SIMULATION ENGINE (WRAPPED IN A REUSABLE FUNCTION)
+# 4A. FAST MONTE CARLO ENGINE (FOR OPTIMIZATION ONLY)
+# =========================================================================
+@st.cache_data(show_spinner=False)
+def run_fast_mc_sim(df_inputs, duration, n_seeds, rops_dict):
+    """Highly vectorized, barebones simulation to churn through thousands of scenarios instantly."""
+    num_skus = len(df_inputs)
+    skus = df_inputs['SKU'].astype(str).tolist()
+    
+    order_q = np.array(df_inputs['Order Qty (Q)'].values, dtype=int)
+    touch_time = np.array(df_inputs['Factory Touch Time (Days)'].values, dtype=int)
+    init_inv = np.array(df_inputs['Initial WH Inventory'].values, dtype=int)
+    rop_arr = np.array([rops_dict[s] for s in skus], dtype=int)
+    
+    demands = np.zeros((n_seeds, num_skus, duration), dtype=int)
+    for i, row in df_inputs.iterrows():
+        avg_d = float(row["Avg Demand"])
+        var_d = float(row["Variation / Range"])
+        if str(row["Dist Type"]) == "Normal":
+            demands[:, i, :] = np.maximum(0, np.random.normal(avg_d, var_d, (n_seeds, duration))).round()
+        else:
+            demands[:, i, :] = np.random.uniform(max(0, avg_d - var_d), avg_d + var_d, (n_seeds, duration)).round()
+            
+    fill_rates = np.zeros((n_seeds, num_skus))
+    
+    for s_idx in range(n_seeds):
+        current_inv = init_inv.copy()
+        sales = np.zeros(num_skus, dtype=int)
+        
+        queue_sku = []
+        queue_qty = []
+        queue_rem = []
+        
+        active_sku = -1
+        active_rem = 0
+        pipeline = [] 
+        
+        for day in range(duration):
+            new_pipeline = []
+            for p_day, p_sku, p_qty in pipeline:
+                if p_day <= day:
+                    current_inv[p_sku] += p_qty
+                else:
+                    new_pipeline.append((p_day, p_sku, p_qty))
+            pipeline = new_pipeline
+            
+            today_d = demands[s_idx, :, day]
+            sold = np.minimum(current_inv, today_d)
+            current_inv -= sold
+            sales += sold
+            
+            inv_pos = current_inv.copy()
+            if active_sku != -1:
+                inv_pos[active_sku] += order_q[active_sku]
+            for q_s, q_q in zip(queue_sku, queue_qty):
+                inv_pos[q_s] += q_q
+            for p_day, p_sku, p_qty in pipeline:
+                inv_pos[p_sku] += p_qty
+                
+            triggers = np.where(inv_pos <= rop_arr)[0]
+            for t_sku in triggers:
+                queue_sku.append(t_sku)
+                queue_qty.append(order_q[t_sku])
+                queue_rem.append(touch_time[t_sku])
+                inv_pos[t_sku] += order_q[t_sku] 
+                
+            if active_sku != -1:
+                active_rem -= 1
+                if active_rem <= 0:
+                    pipeline.append((day + 1, active_sku, order_q[active_sku]))
+                    active_sku = -1
+                    
+            if active_sku == -1 and len(queue_sku) > 0:
+                active_sku = queue_sku.pop(0)
+                active_rem = queue_rem.pop(0)
+                queue_qty.pop(0)
+                
+        tot_demand = demands[s_idx, :, :].sum(axis=1)
+        fill_rates[s_idx, :] = np.where(tot_demand > 0, (sales / tot_demand) * 100, 0)
+        
+    return fill_rates 
+
+
+# =========================================================================
+# 4B. FULL SIMULATION ENGINE (FOR DASHBOARD & VISUALS)
 # =========================================================================
 def run_mts_simulation(df_inputs, duration, seed, rop_overrides=None):
     np.random.seed(int(seed))
@@ -204,70 +288,76 @@ def run_mts_simulation(df_inputs, duration, seed, rop_overrides=None):
     }
 
 # =========================================================================
-# 5. NEW BLOCK: ITERATIVE HEURISTIC ROP OPTIMIZER
+# 5. MONTE CARLO ROP OPTIMIZER
 # =========================================================================
 st.markdown("---")
-st.subheader("🎯 Auto-Optimize Reorder Points (ROP)")
-st.markdown("Uses an iterative heuristic search to minimize average inventory while achieving your target service level.")
+st.subheader("🎯 Auto-Optimize Reorder Points (Monte Carlo Risk Engine)")
+st.markdown("Calculates the optimal ROP required to hit your target service levels across **1,000 different simulated demand futures**, preventing 'black swan' stockouts caused by finite factory queues.")
 
-opt_col1, opt_col2, opt_col3 = st.columns([1, 1, 2])
+opt_col1, opt_col2, opt_col3 = st.columns([1, 1, 1.5])
 with opt_col1:
-    target_sl = st.number_input("Target Fill Rate (%)", min_value=70.0, max_value=100.0, value=95.0, step=1.0)
+    target_sl = st.number_input("Target Fill Rate (%)", min_value=70.0, max_value=100.0, value=99.0, step=0.5)
 with opt_col2:
+    conf_level = st.number_input("Confidence Level (%)", min_value=50.0, max_value=99.9, value=95.0, step=1.0, help="E.g., 95% confidence means 95 out of 100 random years will successfully hit the Target Fill Rate.")
+with opt_col3:
     st.markdown("<br>", unsafe_allow_html=True)
-    run_opt = st.button("🔍 Run Optimization")
+    run_opt = st.button("🎲 Run 1,000-Seed Optimization")
 
 if run_opt:
     if total_util_pct > 100:
         st.warning("Optimization is highly unstable when capacity utilization is over 100%. The factory cannot catch up to demand regardless of ROP.")
     else:
-        with st.spinner("Running heuristic optimization loop..."):
-            current_rops = {str(row["SKU"]): int(row["WH Reorder Point (ROP)"]) for _, row in edited_df.iterrows()}
-            step_sizes = {str(row["SKU"]): max(5, int(row["Order Qty (Q)"] * 0.05)) for _, row in edited_df.iterrows()}
+        with st.spinner("Phase 1: Tuning Phase (Dialing in ROPs across 50 scenarios)..."):
+            skus = edited_df['SKU'].astype(str).tolist()
+            current_rops = {s: int(edited_df.loc[edited_df['SKU'] == s, 'WH Reorder Point (ROP)'].values[0]) for s in skus}
+            step_sizes = {s: max(5, int(edited_df.loc[edited_df['SKU'] == s, 'Order Qty (Q)'].values[0] * 0.05)) for s in skus}
             
-            # Baseline capture
-            base_res = run_mts_simulation(edited_df, sim_days, seed_val, current_rops)
-            base_kpis = {k['SKU']: k for k in base_res['kpi_results']}
+            tuning_seeds = 50
+            target_percentile = 100 - conf_level 
             
-            max_iters = 15
+            max_iters = 12
             for i in range(max_iters):
-                sim_res = run_mts_simulation(edited_df, sim_days, seed_val, current_rops)
-                df_kpi = pd.DataFrame(sim_res['kpi_results'])
+                fr_matrix = run_fast_mc_sim(edited_df, sim_days, tuning_seeds, current_rops)
+                achieved_sl = np.percentile(fr_matrix, target_percentile, axis=0)
                 
                 all_met = True
-                for _, kpi in df_kpi.iterrows():
-                    sku = kpi["SKU"]
-                    fr = kpi["Fill Rate (%)"]
-                    
-                    if fr < target_sl:
+                for idx, sku in enumerate(skus):
+                    if achieved_sl[idx] < target_sl:
                         current_rops[sku] += step_sizes[sku]
                         all_met = False
-                    elif fr > (target_sl + 1.5) and current_rops[sku] > step_sizes[sku]: 
+                    elif achieved_sl[idx] > (target_sl + 1.0) and current_rops[sku] > step_sizes[sku]: 
                         current_rops[sku] -= step_sizes[sku]
                         all_met = False
                         
                 if all_met:
                     break
             
-            final_res = run_mts_simulation(edited_df, sim_days, seed_val, current_rops)
-            final_kpis = {k['SKU']: k for k in final_res['kpi_results']}
+        with st.spinner("Phase 2: Stress Test (Validating final ROPs against 1,000 independent demand futures)..."):
+            final_seeds = 1000
+            final_fr_matrix = run_fast_mc_sim(edited_df, sim_days, final_seeds, current_rops)
             
-            # Prepare Comparison Table
             comp_data = []
-            for sku in current_rops.keys():
+            for idx, sku in enumerate(skus):
+                success_rate = (final_fr_matrix[:, idx] >= target_sl).mean() * 100
+                
                 comp_data.append({
                     "SKU": sku,
-                    "Old ROP": base_kpis[sku]["Avg Inventory"], # just used as placeholder for old rop lookup
                     "Original ROP": int(edited_df.loc[edited_df['SKU'] == sku, 'WH Reorder Point (ROP)'].values[0]),
                     "Optimized ROP": current_rops[sku],
-                    "Original Avg Inv": round(base_kpis[sku]["Avg Inventory"], 1),
-                    "New Avg Inv": round(final_kpis[sku]["Avg Inventory"], 1),
-                    "Final Fill Rate (%)": round(final_kpis[sku]["Fill Rate (%)"], 1)
+                    "Target Service Level": f"{target_sl}%",
+                    "Actual Probability of Success": f"{success_rate:.1f}%"
                 })
             
-            st.success(f"Optimization completed in {i+1} iterations.")
-            st.dataframe(pd.DataFrame(comp_data)[["SKU", "Original ROP", "Optimized ROP", "Original Avg Inv", "New Avg Inv", "Final Fill Rate (%)"]], width="stretch", hide_index=True)
-            st.info("💡 To apply these changes, update the ROP values in the Step 1 Matrix above and run the manual simulation below to view the full dashboard.")
+            st.success(f"Successfully evaluated 1,000 independent {sim_days}-day scenarios for {num_skus} SKUs.")
+            
+            df_display = pd.DataFrame(comp_data)
+            def highlight_prob(val):
+                num = float(val.strip('%'))
+                color = 'rgba(144, 238, 144, 0.3)' if num >= conf_level else 'rgba(255, 99, 71, 0.3)'
+                return f'background-color: {color}'
+            
+            st.dataframe(df_display.style.map(highlight_prob, subset=['Actual Probability of Success']), width="stretch", hide_index=True)
+            st.info("💡 To apply these risk-adjusted ROPs, manually update the ROP values in the Step 1 Matrix above and run the manual simulation below.")
 
 # =========================================================================
 # 6. MANUAL SIMULATION TRIGGER

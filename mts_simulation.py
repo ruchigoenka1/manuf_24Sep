@@ -15,6 +15,9 @@ if not st.session_state.get("authentication_status"):
 if "mts_results" not in st.session_state:
     st.session_state.mts_results = None
 
+if "optimized_rops" not in st.session_state:
+    st.session_state.optimized_rops = None
+
 project_start_date = st.session_state.get('start_date', datetime.today())
 
 # =========================================================================
@@ -348,6 +351,9 @@ if run_opt:
                     "Actual Probability of Success": f"{success_rate:.1f}%"
                 })
             
+            # Save optimized ROPs to session state for the new button
+            st.session_state.optimized_rops = current_rops
+            
             st.success(f"Successfully evaluated 1,000 independent {sim_days}-day scenarios for {num_skus} SKUs.")
             
             df_display = pd.DataFrame(comp_data)
@@ -357,15 +363,26 @@ if run_opt:
                 return f'background-color: {color}'
             
             st.dataframe(df_display.style.map(highlight_prob, subset=['Actual Probability of Success']), width="stretch", hide_index=True)
-            st.info("💡 To apply these risk-adjusted ROPs, manually update the ROP values in the Step 1 Matrix above and run the manual simulation below.")
+            st.info("💡 You can now click 'Run with Optimized ROPs' below to instantly load these risk-adjusted values into the dashboard.")
 
 # =========================================================================
-# 6. MANUAL SIMULATION TRIGGER
+# 6. MANUAL SIMULATION TRIGGER (TWO BUTTONS)
 # =========================================================================
 st.markdown("---")
-if st.button("🚀 Run Standard MTS Simulation", type="primary"):
-    with st.spinner("Simulating finite-capacity factory physics..."):
-        st.session_state.mts_results = run_mts_simulation(edited_df, sim_days, seed_val)
+col_run1, col_run2 = st.columns(2)
+
+with col_run1:
+    if st.button("🚀 Run with Input ROPs", type="primary", use_container_width=True):
+        with st.spinner("Simulating finite-capacity factory physics..."):
+            st.session_state.mts_results = run_mts_simulation(edited_df, sim_days, seed_val)
+
+with col_run2:
+    if st.button("✨ Run with Optimized ROPs", type="primary", use_container_width=True):
+        if st.session_state.get("optimized_rops") is None:
+            st.error("Please run the 1,000-Seed Optimization engine above first to generate the optimal ROPs!")
+        else:
+            with st.spinner("Simulating using risk-adjusted ROPs..."):
+                st.session_state.mts_results = run_mts_simulation(edited_df, sim_days, seed_val, st.session_state.optimized_rops)
 
 # =========================================================================
 # 7. DASHBOARD & VISUALIZATIONS 

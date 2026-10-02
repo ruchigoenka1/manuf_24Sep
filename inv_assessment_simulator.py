@@ -428,10 +428,3 @@ fig_waterfall = go.Figure(go.Waterfall(
 
 st.plotly_chart(fig_waterfall,use_container_width=True)
 
-# ------------------------------------------------
-# Data Table
-# ------------------------------------------------
-
-st.subheader("Simulation Data")
-
-st.dataframe(df)

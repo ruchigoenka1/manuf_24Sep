@@ -39,7 +39,7 @@ opening_balance = st.sidebar.number_input("Opening Balance", value=500)
 
 avg_demand = st.sidebar.number_input("Average Demand", value=25)
 
-variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=5)
+variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=75)
 
 use_beta_only = st.sidebar.checkbox("Only Beta Distribution", value=False)
 
@@ -172,6 +172,12 @@ df = pd.DataFrame(data, columns=[
 
 stockout_days = (df["Closing Balance"] == 0).sum()
 
+# Fill Rate Calculation
+df["Sales"] = df["Opening Balance"] + df["Shipment Received"] - df["Closing Balance"]
+total_demand = df["Demand"].sum()
+total_sales = df["Sales"].sum()
+fill_rate = (total_sales / total_demand * 100) if total_demand > 0 else 100.0
+
 average_inventory = df["Closing Balance Including Pipeline"].mean()
 
 average_age_inventory = average_inventory / df["Demand"].mean()
@@ -270,16 +276,17 @@ cost_eoq_policy = simulate_inventory_cost(int(eoq))
 
 st.subheader("Inventory KPIs")
 
-c1,c2,c3,c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 
-c1.metric("Stockout Days", stockout_days)
-c2.metric("Average Age of Inventory", round(average_age_inventory,1))
-c3.metric("Average Inventory", round(average_inventory,0))
-c4.metric("Avg Working Capital", round(average_working_capital,0))
+c1.metric("Fill Rate", f"{fill_rate:.1f}%")
+c2.metric("Stockout Days", stockout_days)
+c3.metric("Avg Age of Inventory", round(average_age_inventory,1))
+c4.metric("Avg Inventory", round(average_inventory,0))
+c5.metric("Avg Working Capital", round(average_working_capital,0))
 
 st.subheader("Inventory Range")
 
-r1,r2,r3,r4 = st.columns(4)
+r1, r2, r3, r4 = st.columns(4)
 
 r1.metric("Minimum Inventory", round(min_inventory,0))
 r2.metric("Maximum Inventory", round(max_inventory,0))
@@ -288,7 +295,7 @@ r4.metric("Maximum Working Capital", round(max_wc,0))
 
 st.subheader("Inventory Cost Metrics")
 
-cc1,cc2,cc3 = st.columns(3)
+cc1, cc2, cc3 = st.columns(3)
 
 cc1.metric("Total Holding Cost", round(total_holding_cost,0))
 cc2.metric("Total Ordering Cost", round(total_ordering_cost,0))
@@ -296,14 +303,14 @@ cc3.metric("Total Inventory Cost", round(total_inventory_cost,0))
 
 st.subheader("EOQ")
 
-e1,e2 = st.columns(2)
+e1, e2 = st.columns(2)
 
 e1.metric("Economic Order Quantity", round(eoq,0))
 e2.metric("Selected Order Quantity", order_qty)
 
 st.subheader("Cost Comparison")
 
-k1,k2,k3 = st.columns(3)
+k1, k2, k3 = st.columns(3)
 
 k1.metric("Cost with Current Policy", round(cost_current_policy,0))
 k2.metric("Cost with EOQ", round(cost_eoq_policy,0))
@@ -441,3 +448,11 @@ fig_waterfall = go.Figure(go.Waterfall(
 ))
 
 st.plotly_chart(fig_waterfall,use_container_width=True)
+
+# ------------------------------------------------
+# Data Table
+# ------------------------------------------------
+
+st.subheader("Simulation Data")
+
+st.dataframe(df)

@@ -39,8 +39,8 @@ opening_balance = st.sidebar.number_input("Opening Balance", value=500)
 
 avg_demand = st.sidebar.number_input("Average Demand", value=25)
 
-# Replaced COV with Variation Limit
-variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=10)
+# Variation limit dynamically defines the absolute maximum demand
+variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=75)
 
 lead_time = st.sidebar.number_input("Lead Time (Days)", value=3)
 
@@ -73,19 +73,30 @@ if st.button("Reset Demand Scenario"):
     st.session_state.demand_sequence = None
 
 # ------------------------------------------------
-# Demand Generation
+# Demand Generation (Scaled Beta Distribution)
 # ------------------------------------------------
-
-# Uniform distribution between (Avg - Variation) and (Avg + Variation), floor at 0
 if st.session_state.demand_sequence is None:
-    st.session_state.demand_sequence = np.random.uniform(
-        max(0, avg_demand - variation_limit),
-        avg_demand + variation_limit,
-        num_days
-    ).round()
+    max_demand = avg_demand + variation_limit
+    
+    if max_demand <= avg_demand or avg_demand <= 0:
+        st.session_state.demand_sequence = np.full(num_days, max(0, avg_demand)).round()
+    else:
+        # Calculate shape parameters (alpha, beta) to hit the exact target average
+        target_ratio = avg_demand / max_demand
+        
+        # We constrain a, b >= 2 to ensure a smooth, unimodal curve without edge spikes
+        if target_ratio <= 0.5:
+            a = 2.0
+            b = a * (1 - target_ratio) / target_ratio
+        else:
+            b = 2.0
+            a = b * target_ratio / (1 - target_ratio)
+            
+        # Generate raw Beta probabilities (0.0 to 1.0) and scale to max_demand
+        raw_beta = np.random.beta(a, b, num_days)
+        st.session_state.demand_sequence = (raw_beta * max_demand).round()
 
 demand = st.session_state.demand_sequence
-
 dates = pd.date_range(start="2024-01-01", periods=num_days)
 
 # ------------------------------------------------
@@ -428,3 +439,10 @@ fig_waterfall = go.Figure(go.Waterfall(
 
 st.plotly_chart(fig_waterfall,use_container_width=True)
 
+# ------------------------------------------------
+# Data Table
+# ------------------------------------------------
+
+st.subheader("Simulation Data")
+
+st.dataframe(df)

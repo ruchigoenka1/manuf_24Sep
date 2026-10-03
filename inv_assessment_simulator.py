@@ -39,8 +39,9 @@ opening_balance = st.sidebar.number_input("Opening Balance", value=500)
 
 avg_demand = st.sidebar.number_input("Average Demand", value=25)
 
-# Variation limit dynamically defines the absolute maximum demand
 variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=75)
+
+use_beta_only = st.sidebar.checkbox("Only Beta Distribution", value=False)
 
 lead_time = st.sidebar.number_input("Lead Time (Days)", value=3)
 
@@ -73,28 +74,30 @@ if st.button("Reset Demand Scenario"):
     st.session_state.demand_sequence = None
 
 # ------------------------------------------------
-# Demand Generation (Scaled Beta Distribution)
+# Demand Generation (Conditional Routing)
 # ------------------------------------------------
 if st.session_state.demand_sequence is None:
+    min_demand = avg_demand - variation_limit
     max_demand = avg_demand + variation_limit
     
-    if max_demand <= avg_demand or avg_demand <= 0:
-        st.session_state.demand_sequence = np.full(num_days, max(0, avg_demand)).round()
-    else:
-        # Calculate shape parameters (alpha, beta) to hit the exact target average
-        target_ratio = avg_demand / max_demand
-        
-        # We constrain a, b >= 2 to ensure a smooth, unimodal curve without edge spikes
-        if target_ratio <= 0.5:
-            a = 2.0
-            b = a * (1 - target_ratio) / target_ratio
+    if use_beta_only or min_demand < 0:
+        # Use Scaled Beta Distribution to handle zero-bound skew
+        if max_demand <= avg_demand or avg_demand <= 0:
+            st.session_state.demand_sequence = np.full(num_days, max(0, avg_demand)).round()
         else:
-            b = 2.0
-            a = b * target_ratio / (1 - target_ratio)
-            
-        # Generate raw Beta probabilities (0.0 to 1.0) and scale to max_demand
-        raw_beta = np.random.beta(a, b, num_days)
-        st.session_state.demand_sequence = (raw_beta * max_demand).round()
+            target_ratio = avg_demand / max_demand
+            if target_ratio <= 0.5:
+                a = 2.0
+                b = a * (1 - target_ratio) / target_ratio
+            else:
+                b = 2.0
+                a = b * target_ratio / (1 - target_ratio)
+                
+            raw_beta = np.random.beta(a, b, num_days)
+            st.session_state.demand_sequence = (raw_beta * max_demand).round()
+    else:
+        # Use standard Uniform Distribution when limits are safely above zero
+        st.session_state.demand_sequence = np.random.uniform(min_demand, max_demand, num_days).round()
 
 demand = st.session_state.demand_sequence
 dates = pd.date_range(start="2024-01-01", periods=num_days)
@@ -438,11 +441,3 @@ fig_waterfall = go.Figure(go.Waterfall(
 ))
 
 st.plotly_chart(fig_waterfall,use_container_width=True)
-
-# ------------------------------------------------
-# Data Table
-# ------------------------------------------------
-
-st.subheader("Simulation Data")
-
-st.dataframe(df)

@@ -39,7 +39,7 @@ opening_balance = st.sidebar.number_input("Opening Balance", value=500)
 
 avg_demand = st.sidebar.number_input("Average Demand", value=25)
 
-variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=75)
+variation_limit = st.sidebar.number_input("Demand Variation (+/-)", value=5)
 
 use_beta_only = st.sidebar.checkbox("Only Beta Distribution", value=False)
 
@@ -449,10 +449,3 @@ fig_waterfall = go.Figure(go.Waterfall(
 
 st.plotly_chart(fig_waterfall,use_container_width=True)
 
-# ------------------------------------------------
-# Data Table
-# ------------------------------------------------
-
-st.subheader("Simulation Data")
-
-st.dataframe(df)

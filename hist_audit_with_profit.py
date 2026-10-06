@@ -441,6 +441,8 @@ if uploaded_file is not None:
     if st.button("🚀 Run Comparative Analysis", type="primary"):
         with st.spinner("Simulating scenarios..."):
             sens_results = []
+            scenario_inventories = {}  # Dictionary to store data for the graph
+            
             for _, row in edited_sens_df.iterrows():
                 # Extract values safely depending on policy
                 s_p1 = row["Reorder Point"] if policy == "Continuous Review" else row["Review Period (Days)"]
@@ -451,8 +453,13 @@ if uploaded_file is not None:
                     max_wait_time, unit_value, unit_profit, holding_cost_pct, ordering_cost
                 )
                 
+                # Store the daily physical inventory for the graph
+                scenario_inventories[row["Scenario Name"]] = s_res['Physical Inventory']
+                
                 sens_results.append({
                     "Scenario": row["Scenario Name"],
+                    "Reorder Point / Review Period": s_p1,
+                    "Order Qty / Target Level (S)": s_p2,
                     "Fill Rate (%)": f"{s_res['Fill Rate']:.2f}%",
                     "Missed Demand": f"{s_res['Missed Demand']:,.0f}",
                     "Stockout Days": s_res['Stockout Days'],
@@ -469,3 +476,21 @@ if uploaded_file is not None:
             df_res.rename(columns={"index": "Metric"}, inplace=True)
             
             st.dataframe(df_res, use_container_width=True, hide_index=True)
+
+            # ------------------------------------------------
+            # Scenario Comparison Chart
+            # ------------------------------------------------
+            st.markdown("##### 📈 Scenario Comparison: Physical Inventory Balance")
+            fig_comp = go.Figure()
+            
+            for sc_name, inv_data in scenario_inventories.items():
+                fig_comp.add_trace(go.Scatter(
+                    x=df_filled[time_col], 
+                    y=inv_data, 
+                    mode="lines", 
+                    name=sc_name,
+                    opacity=0.8
+                ))
+            
+            fig_comp = style_plotly_fig(fig_comp)
+            st.plotly_chart(fig_comp, use_container_width=True)

@@ -367,13 +367,16 @@ if uploaded_file is not None:
     main_opening = np.roll(main_closing, 1)
     main_opening[0] = opening_balance
     
-    # Shipments received are orders placed shifted by the lead time
+    # Shipments received (Receipts) are orders placed shifted by the lead time
     main_shipments = np.roll(main_new_order, int(lead_time))
     if int(lead_time) > 0:
         main_shipments[:int(lead_time)] = 0 
         
-    # Math flow: Opening + Received - Closing = Sales (fulfilled demand)
-    main_sales = main_opening + main_shipments - main_closing
+    # Calculate Total Available Balance
+    main_total_available = main_opening + main_shipments
+        
+    # Math flow: Total Available - Closing = Sales (fulfilled demand)
+    main_sales = main_total_available - main_closing
     main_pipeline = main_inv_pos - main_net
     
     daily_holding_rate = (holding_cost_pct / 100) / 365
@@ -383,15 +386,16 @@ if uploaded_file is not None:
     df_simulated_view = pd.DataFrame({
         "Date": df_filled[time_col],
         "Opening Balance": main_opening.astype(int),
+        "Receipts": main_shipments.astype(int),
+        "Total Available Balance": main_total_available.astype(int),
         "Demand": main_demand.astype(int),
-        "Shipment Received": main_shipments.astype(int),
+        "Sales": main_sales.astype(int),
+        "Lost Sales": main_lost_sales.astype(int),
+        "Closing Balance": main_closing.astype(int),
         "Pipeline Order": main_pipeline.astype(int),
         "Inventory Position": main_inv_pos.astype(int),
         "New Order": main_new_order.astype(int),
-        "Closing Balance": main_closing.astype(int),
         "Closing Bal (Incl Pipeline)": main_inv_pos.astype(int),
-        "Sales": main_sales.astype(int),
-        "Lost Sales": main_lost_sales.astype(int), # Included as requested in previous steps
         "Blocked Working Capital": (main_inv_pos * unit_value).round(2),
         "Inventory Value": main_inv_value.round(2),
         "Holding Cost": (main_inv_value * daily_holding_rate).round(2)

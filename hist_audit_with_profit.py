@@ -522,7 +522,90 @@ if uploaded_file is not None:
         
         st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
+    # ------------------------------------------------
+    # Rolling Demand & Service Level Analysis
+    # ------------------------------------------------
+    with st.expander("📊 Rolling Demand & Service Level Analysis"):
+        st.markdown(f"Analyze demand aggregated over a specific time window and determine required inventory levels for target service levels.")
+        
+        # User input for rolling window
+        rolling_window = st.number_input("Rolling Window (Days)", min_value=1, value=int(lead_time), step=1)
+        
+        # Calculate rolling demand
+        rolling_series = df_filled['Derived Demand'].rolling(window=rolling_window).sum().dropna()
+        max_rd = max(rolling_series.max(), 1)
+        
+        # Service Level Calculator Inputs
+        st.markdown("#### Service Level & Target Quantity Calculator")
+        calc_col1, calc_col2 = st.columns(2)
+        
+        with calc_col1:
+            st.markdown("**Calculate Quantity from Service Level**")
+            target_sl = st.number_input("Target Service Level (%)", min_value=0.0, max_value=100.0, value=95.0, step=1.0)
+            calc_qty = np.percentile(rolling_series, target_sl) if len(rolling_series) > 0 else 0
+            st.info(f"To achieve a **{target_sl}%** service level, you need **{calc_qty:,.0f}** units over {rolling_window} days.")
+            
+        with calc_col2:
+            st.markdown("**Calculate Service Level from Quantity**")
+            target_qty = st.number_input("Target Quantity (Units)", min_value=0.0, value=float(calc_qty), step=10.0)
+            calc_sl = (rolling_series <= target_qty).mean() * 100 if len(rolling_series) > 0 else 0
+            st.info(f"Holding **{target_qty:,.0f}** units provides a **{calc_sl:.2f}%** service level over {rolling_window} days.")
+            
+        st.divider()
+        
+        # Histogram Settings
+        r_hist_col1, r_hist_col2 = st.columns([1, 3])
+        
+        with r_hist_col1:
+            st.markdown("**Histogram Settings**")
+            r_bin_method = st.radio("Define bins by:", ["Number of Bins", "Bin Size"], key="r_bin_method")
+            
+            if r_bin_method == "Number of Bins":
+                r_num_bins = st.slider("Number of Bins", min_value=5, max_value=100, value=20, key="r_num_bins")
+                r_bin_size = max_rd / r_num_bins
+            else:
+                r_bin_size = st.number_input("Bin Size (Units)", min_value=1.0, value=max(10.0, max_rd/20), step=5.0, key="r_bin_size")
+                r_num_bins = int(np.ceil(max_rd / r_bin_size)) if r_bin_size > 0 else 20
 
+        with r_hist_col2:
+            fig_r_hist = go.Figure()
+            fig_r_hist.add_trace(go.Histogram(
+                x=rolling_series,
+                xbins=dict(start=0, end=max_rd + r_bin_size, size=r_bin_size),
+                marker_color='mediumpurple',
+                name=f"{rolling_window}-Day Demand"
+            ))
+            
+            # Add vertical dotted lines for the calculated service levels
+            fig_r_hist.add_vline(x=calc_qty, line_width=3, line_dash="dash", line_color="orange", 
+                                 annotation_text=f"{target_sl}% SL ({calc_qty:.0f})", annotation_position="top right")
+            fig_r_hist.add_vline(x=target_qty, line_width=3, line_dash="dot", line_color="cyan", 
+                                 annotation_text=f"Qty {target_qty:.0f} ({calc_sl:.1f}%)", annotation_position="top left")
+            
+            fig_r_hist.update_layout(
+                title=f"{rolling_window}-Day Rolling Demand Frequency", 
+                xaxis_title="Aggregated Demand Quantity", 
+                yaxis_title="Frequency (Periods)",
+                bargap=0.05
+            )
+            fig_r_hist = style_plotly_fig(fig_r_hist)
+            st.plotly_chart(fig_r_hist, use_container_width=True)
+
+        st.markdown("**Frequency Table**")
+        
+        # Calculate Frequency Table using numpy based on the user's bin selections
+        if len(rolling_series) > 0:
+            r_counts, r_bin_edges = np.histogram(rolling_series, bins=r_num_bins, range=(0, max_rd))
+            
+            r_freq_df = pd.DataFrame({
+                "Bin Range": [f"{r_bin_edges[i]:.0f} to {r_bin_edges[i+1]:.0f}" for i in range(len(r_counts))],
+                "Frequency (Periods)": r_counts,
+                "Percentage (%)": (r_counts / len(rolling_series) * 100).round(2)
+            })
+            
+            st.dataframe(r_freq_df, use_container_width=True, hide_index=True)
+
+    
     # ------------------------------------------------
     # Sensitivity Analysis Section
     # ------------------------------------------------

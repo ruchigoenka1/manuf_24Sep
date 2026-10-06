@@ -192,7 +192,6 @@ st.divider()
 uploaded_file = st.file_uploader("Upload Historical Data", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    # Load Data safely without try/except wrapping the whole page
     if uploaded_file.name.endswith('.csv'):
         df_hist = pd.read_csv(uploaded_file)
     else:
@@ -391,25 +390,55 @@ if uploaded_file is not None:
     # Sensitivity Analysis Section
     # ------------------------------------------------
     st.subheader("🔍 Scenario & Sensitivity Analysis")
-    st.markdown("Create multiple scenarios by adjusting parameters to compare working capital, fulfillment, and profitability tradeoffs.")
+    st.markdown("Create multiple scenarios using the input boxes below to compare working capital, fulfillment, and profitability tradeoffs.")
     
-    # Build dynamic default scenarios based on the selected policy
+    # Create 3 columns for side-by-side scenario inputs
+    col1, col2, col3 = st.columns(3)
+    scenarios = []
+
     if policy == "Continuous Review":
-        sens_defaults = pd.DataFrame({
-            "Scenario Name": ["Base Policy", "Aggressive (Low ROP)", "Conservative (High ROP)"],
-            "Reorder Point": [int(p1_val), int(p1_val * 0.8), int(p1_val * 1.2)],
-            "Order Quantity": [int(p2_val), int(p2_val * 1.2), int(p2_val * 0.8)]
-        })
+        with col1:
+            st.markdown("#### Scenario 1")
+            s1_name = st.text_input("Scenario Name", value="Base Policy", key="s1_n")
+            s1_p1 = st.number_input("Reorder Point", value=int(p1_val), key="s1_p1")
+            s1_p2 = st.number_input("Order Quantity", value=int(p2_val), key="s1_p2")
+            scenarios.append({"Scenario Name": s1_name, "Reorder Point": s1_p1, "Order Quantity": s1_p2})
+        with col2:
+            st.markdown("#### Scenario 2")
+            s2_name = st.text_input("Scenario Name", value="Aggressive (Low ROP)", key="s2_n")
+            s2_p1 = st.number_input("Reorder Point", value=int(p1_val * 0.8), key="s2_p1")
+            s2_p2 = st.number_input("Order Quantity", value=int(p2_val * 1.2), key="s2_p2")
+            scenarios.append({"Scenario Name": s2_name, "Reorder Point": s2_p1, "Order Quantity": s2_p2})
+        with col3:
+            st.markdown("#### Scenario 3")
+            s3_name = st.text_input("Scenario Name", value="Conservative (High ROP)", key="s3_n")
+            s3_p1 = st.number_input("Reorder Point", value=int(p1_val * 1.2), key="s3_p1")
+            s3_p2 = st.number_input("Order Quantity", value=int(p2_val * 0.8), key="s3_p2")
+            scenarios.append({"Scenario Name": s3_name, "Reorder Point": s3_p1, "Order Quantity": s3_p2})
     else:
-        sens_defaults = pd.DataFrame({
-            "Scenario Name": ["Base Policy", "Frequent Reviews", "Infrequent Reviews"],
-            "Review Period (Days)": [int(p1_val), max(1, int(p1_val - 2)), int(p1_val + 2)],
-            "Order-Up-To Level (S)": [int(p2_val), int(p2_val * 0.8), int(p2_val * 1.2)]
-        })
-        
-    edited_sens_df = st.data_editor(sens_defaults, num_rows="dynamic", use_container_width=True)
+        with col1:
+            st.markdown("#### Scenario 1")
+            s1_name = st.text_input("Scenario Name", value="Base Policy", key="sp1_n")
+            s1_p1 = st.number_input("Review Period (Days)", value=int(p1_val), key="sp1_p1")
+            s1_p2 = st.number_input("Order-Up-To Level (S)", value=int(p2_val), key="sp1_p2")
+            scenarios.append({"Scenario Name": s1_name, "Review Period (Days)": s1_p1, "Order-Up-To Level (S)": s1_p2})
+        with col2:
+            st.markdown("#### Scenario 2")
+            s2_name = st.text_input("Scenario Name", value="Frequent Reviews", key="sp2_n")
+            s2_p1 = st.number_input("Review Period (Days)", value=max(1, int(p1_val - 2)), key="sp2_p1")
+            s2_p2 = st.number_input("Order-Up-To Level (S)", value=int(p2_val * 0.8), key="sp2_p2")
+            scenarios.append({"Scenario Name": s2_name, "Review Period (Days)": s2_p1, "Order-Up-To Level (S)": s2_p2})
+        with col3:
+            st.markdown("#### Scenario 3")
+            s3_name = st.text_input("Scenario Name", value="Infrequent Reviews", key="sp3_n")
+            s3_p1 = st.number_input("Review Period (Days)", value=int(p1_val + 2), key="sp3_p1")
+            s3_p2 = st.number_input("Order-Up-To Level (S)", value=int(p2_val * 1.2), key="sp3_p2")
+            scenarios.append({"Scenario Name": s3_name, "Review Period (Days)": s3_p1, "Order-Up-To Level (S)": s3_p2})
+
+    edited_sens_df = pd.DataFrame(scenarios)
     
-    if st.button("Run Comparative Analysis", type="primary"):
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🚀 Run Comparative Analysis", type="primary"):
         with st.spinner("Simulating scenarios..."):
             sens_results = []
             for _, row in edited_sens_df.iterrows():

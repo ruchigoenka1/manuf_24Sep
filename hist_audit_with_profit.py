@@ -619,4 +619,28 @@ if uploaded_file is not None:
         # ------------------------------------------------
         with st.expander("📄 View Detailed Scenario Data"):
             selected_sc = st.selectbox("Select Scenario to view data:", options=list(st.session_state.scenario_dataframes.keys()))
-            st.dataframe(st.session_state.scenario_dataframes[selected_sc], use_container_width=True, hide_index=True)
+            
+            selected_df = st.session_state.scenario_dataframes[selected_sc]
+            
+            # Add dynamic graph for the selected scenario
+            st.markdown(f"**Inventory Trend: {selected_sc}**")
+            fig_sc = go.Figure()
+            fig_sc.add_trace(go.Scatter(
+                x=selected_df["Date"], 
+                y=selected_df["Closing Balance"], 
+                mode="lines", 
+                name="Closing Balance",
+                line=dict(color='skyblue', width=2)
+            ))
+            fig_sc.add_trace(go.Scatter(
+                x=selected_df["Date"], 
+                y=selected_df["Closing Bal (Incl Pipeline)"], 
+                mode="lines", 
+                name="Inventory Position",
+                line=dict(color='orange', width=2)
+            ))
+            fig_sc = style_plotly_fig(fig_sc)
+            st.plotly_chart(fig_sc, use_container_width=True)
+            
+            # Render the data table below the graph
+            st.dataframe(selected_df, use_container_width=True, hide_index=True)

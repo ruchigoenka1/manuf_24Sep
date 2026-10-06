@@ -192,47 +192,247 @@ st.divider()
 uploaded_file = st.file_uploader("Upload Historical Data", type=["csv", "xlsx"])
 
 if uploaded_file is not None:
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            df_hist = pd.read_csv(uploaded_file)
-        else:
-            df_hist = pd.read_excel(uploaded_file)
-            
-        time_col = df_hist.columns[0]
-        balance_col = df_hist.columns[1]
+    # Load Data safely without try/except wrapping the whole page
+    if uploaded_file.name.endswith('.csv'):
+        df_hist = pd.read_csv(uploaded_file)
+    else:
+        df_hist = pd.read_excel(uploaded_file)
         
-        is_numeric_index = pd.api.types.is_numeric_dtype(df_hist[time_col])
-        if not is_numeric_index:
-            df_hist[time_col] = pd.to_datetime(df_hist[time_col])
-            
-        df_hist = df_hist.sort_values(by=time_col)
-        df_hist.set_index(time_col, inplace=True)
+    time_col = df_hist.columns[0]
+    balance_col = df_hist.columns[1]
+    
+    is_numeric_index = pd.api.types.is_numeric_dtype(df_hist[time_col])
+    if not is_numeric_index:
+        df_hist[time_col] = pd.to_datetime(df_hist[time_col])
         
-        if is_numeric_index:
-            full_range = range(int(df_hist.index.min()), int(df_hist.index.max()) + 1)
-        else:
-            full_range = pd.date_range(start=df_hist.index.min(), end=df_hist.index.max())
-        
-        df_filled = df_hist.reindex(full_range).ffill()
-        df_filled.reset_index(inplace=True)
-        df_filled.rename(columns={'index': time_col}, inplace=True)
-        
-        df_filled['Previous Balance'] = df_filled[balance_col].shift(1)
-        df_filled['Derived Demand'] = np.where(
-            df_filled['Previous Balance'] > df_filled[balance_col], 
-            df_filled['Previous Balance'] - df_filled[balance_col], 
-            0
-        )
-        df_filled['Derived Demand'] = df_filled['Derived Demand'].fillna(0)
-        
-        avg_demand_hist = df_filled['Derived Demand'].mean() if len(df_filled) > 0 else 0
+    df_hist = df_hist.sort_values(by=time_col)
+    df_hist.set_index(time_col, inplace=True)
+    
+    if is_numeric_index:
+        full_range = range(int(df_hist.index.min()), int(df_hist.index.max()) + 1)
+    else:
+        full_range = pd.date_range(start=df_hist.index.min(), end=df_hist.index.max())
+    
+    df_filled = df_hist.reindex(full_range).ffill()
+    df_filled.reset_index(inplace=True)
+    df_filled.rename(columns={'index': time_col}, inplace=True)
+    
+    df_filled['Previous Balance'] = df_filled[balance_col].shift(1)
+    df_filled['Derived Demand'] = np.where(
+        df_filled['Previous Balance'] > df_filled[balance_col], 
+        df_filled['Previous Balance'] - df_filled[balance_col], 
+        0
+    )
+    df_filled['Derived Demand'] = df_filled['Derived Demand'].fillna(0)
+    
+    avg_demand_hist = df_filled['Derived Demand'].mean() if len(df_filled) > 0 else 0
 
-        # ------------------------------------------------
-        # Sidebar Inputs & Policy Configuration
-        # ------------------------------------------------
-        st.sidebar.header("Simulation Parameters")
-        
-        policy = st.sidebar.radio("Inventory Policy", ["Continuous Review", "Periodic Review"])
-        lead_time = st.sidebar.number_input("Lead Time (Days)", value=3)
+    # ------------------------------------------------
+    # Sidebar Inputs & Policy Configuration
+    # ------------------------------------------------
+    st.sidebar.header("Simulation Parameters")
+    
+    policy = st.sidebar.radio("Inventory Policy", ["Continuous Review", "Periodic Review"])
+    lead_time = st.sidebar.number_input("Lead Time (Days)", value=3)
 
-        p1_val, p2_val = 0, 0
+    p1_val, p2_val = 0, 0
+    if policy == "Continuous Review":
+        p1_val = st.sidebar.number_input("Reorder Point", value=200)
+        p2_val = st.sidebar.number_input("Order Quantity", value=300)
+        default_ob = int(1.25 * p1_val)
+        ref_line, ref_label = p1_val, "Reorder Point"
+    else:
+        p1_val = st.sidebar.number_input("Review Period (Days)", value=7)
+        default_S = int(round(avg_demand_hist * (p1_val + lead_time) * 1.5)) if avg_demand_hist > 0 else 500
+        p2_val = st.sidebar.number_input("Order-Up-To Level (S)", min_value=1, value=max(1, default_S))
+        default_ob = int(1.25 * p2_val)
+        ref_line, ref_label = p2_val, "Target Level (S)"
+    
+    opening_balance = st.sidebar.number_input("Opening Balance", value=default_ob)
+    max_wait_time = st.sidebar.number_input("Max Customer Wait Time (Days)", value=5, min_value=0)
+    
+    st.sidebar.divider()
+    st.sidebar.header("Financial Inputs")
+    unit_value = st.sidebar.number_input("Product Value per Unit ($)", value=100.0)
+    unit_profit = st.sidebar.number_input("Profit per Unit Sold ($)", value=35.0)
+    holding_cost_pct = st.sidebar.number_input("Annual Holding Cost (%)", value=20.0)
+    ordering_cost = st.sidebar.number_input("Fixed Ordering Cost per Order ($)", value=500.0)
+
+    include_pipeline = st.sidebar.checkbox("Include Pipeline Inventory in Net Chart", value=False)
+    
+    # ------------------------------------------------
+    # Run Main Simulation
+    # ------------------------------------------------
+    sim_demand = df_filled['Derived Demand'].values
+    res = run_simulation(
+        sim_demand, policy, lead_time, p1_val, p2_val, opening_balance, 
+        max_wait_time, unit_value, unit_profit, holding_cost_pct, ordering_cost
+    )
+    
+    # Map simulation results back to DataFrame for charts
+    df_filled['Physical Inventory'] = res['Physical Inventory']
+    df_filled['Net Inventory'] = res['Net Inventory']
+    df_filled['Active Backorders'] = res['Active Backorders']
+    df_filled['Daily Lost Sales'] = res['Daily Lost Sales']
+    df_filled['Closing Net Including Pipeline'] = res['Closing Net Including Pipeline']
+    df_filled['New Order'] = res['New Order']
+
+    # ------------------------------------------------
+    # Output & Comparison KPIs
+    # ------------------------------------------------
+    st.subheader("Financial Profitability & Costs")
+    
+    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+    p_col1.metric("Gross Profit (From Sales)", f"${res['Gross Profit']:,.0f}")
+    p_col2.metric("Total Holding Cost", f"${res['Total Holding Cost']:,.0f}")
+    p_col3.metric("Total Ordering Cost", f"${res['Total Ordering Cost']:,.0f}")
+    p_col4.metric("Net Overall Profit/Loss", f"${res['Net Profit']:,.0f}")
+
+    st.markdown("**Operational Fulfillment**")
+    o_col1, o_col2, o_col3, o_col4, o_col5 = st.columns(5)
+    o_col1.metric("Total Demand", f"{res['Total Demand']:,.0f}")
+    o_col2.metric("Total Sales Fulfilled", f"{res['Total Sales']:,.0f}")
+    o_col3.metric("Missed Demand", f"{res['Missed Demand']:,.0f}")
+    o_col4.metric("Fill Rate", f"{res['Fill Rate']:.1f}%")
+    o_col5.metric("Stockout Days", res['Stockout Days'])
+
+    st.markdown("**Working Capital & Inventory**")
+    w_col1, w_col2, w_col3 = st.columns(3)
+    w_col1.metric("Avg Physical Inventory", f"{res['Avg Physical Inventory']:,.0f} units")
+    w_col2.metric("Average Working Capital", f"${res['Avg Working Capital']:,.0f}")
+    w_col3.metric("Total Orders Placed", res['Orders Placed'])
+    
+    st.divider()
+
+    # ------------------------------------------------
+    # Data Visualizations
+    # ------------------------------------------------
+    st.subheader("Inventory Behaviour")
+
+    # Graph 1: Physical Inventory
+    st.markdown("##### Physical Inventory vs Historical")
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(x=df_filled[time_col], y=df_filled[balance_col], mode="lines", name="Historical Balance", line=dict(color="gray", width=2, dash="dash")))
+    fig1.add_trace(go.Scatter(x=df_filled[time_col], y=df_filled["Physical Inventory"], name="Simulated Physical Inventory", line=dict(color='skyblue', width=2)))
+
+    reorders = df_filled[df_filled["New Order"] > 0]
+    fig1.add_trace(go.Scatter(x=reorders[time_col], y=reorders["Physical Inventory"], mode="markers", name="Reorder Trigger", marker=dict(color="green", symbol="triangle-up", size=10)))
+
+    actual_stockouts = df_filled[df_filled["Daily Lost Sales"] > 0]
+    fig1.add_trace(go.Scatter(x=actual_stockouts[time_col], y=actual_stockouts["Physical Inventory"], mode="markers", name="Lost Sale (Stockout)", marker=dict(color="red", symbol="triangle-up", size=10)))
+
+    fig1.add_hline(y=ref_line, line_dash="dash", line_color="gray", annotation_text=ref_label, annotation_font_color="white")
+    fig1 = style_plotly_fig(fig1)
+    st.plotly_chart(fig1, use_container_width=True)
+
+    # Graph 2: Net Inventory
+    st.markdown("##### Net Inventory (Backorder Impact)")
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=df_filled[time_col], y=df_filled[balance_col], mode="lines", name="Historical Balance", line=dict(color="gray", width=2, dash="dash")))
+    fig2.add_trace(go.Scatter(x=df_filled[time_col], y=df_filled["Net Inventory"], name="Net Inventory (Includes Backorders)", line=dict(color='orange', width=2)))
+
+    if include_pipeline:
+        fig2.add_trace(go.Scatter(x=df_filled[time_col], y=df_filled["Closing Net Including Pipeline"], name="Inventory Position", line=dict(color='#1f77b4', width=2)))
+        
+    fig2.add_hline(y=ref_line, line_dash="dash", line_color="gray", annotation_text=ref_label, annotation_font_color="white")
+    fig2.add_hline(y=0, line_color="red", line_width=1) 
+    fig2 = style_plotly_fig(fig2)
+    fig2.update_yaxes(rangemode="normal") 
+    st.plotly_chart(fig2, use_container_width=True)
+
+    # ------------------------------------------------
+    # Base Scenario Summary Table
+    # ------------------------------------------------
+    st.divider()
+    st.subheader("📊 Base Scenario Summary Table")
+    st.markdown("A consolidated tabular view of the profitability and operational metrics based on your current sidebar inputs.")
+    
+    base_summary_df = pd.DataFrame({
+        "Category": [
+            "Financial", "Financial", "Financial", "Financial", "Financial", 
+            "Operational", "Operational", "Operational", "Operational", "Operational",
+            "Capital", "Capital"
+        ],
+        "Metric": [
+            "Gross Profit (From Sales)", 
+            "Total Holding Cost", 
+            "Total Ordering Cost", 
+            "Total Inventory Cost", 
+            "Net Profit / Loss",
+            "Total Demand", 
+            "Total Sales Fulfilled", 
+            "Missed Demand", 
+            "Fill Rate", 
+            "Stockout Days",
+            "Avg Physical Inventory", 
+            "Avg Working Capital"
+        ],
+        "Value": [
+            f"${res['Gross Profit']:,.0f}",
+            f"${res['Total Holding Cost']:,.0f}",
+            f"${res['Total Ordering Cost']:,.0f}",
+            f"${res['Total Inventory Cost']:,.0f}",
+            f"${res['Net Profit']:,.0f}",
+            f"{res['Total Demand']:,.0f} units",
+            f"{res['Total Sales']:,.0f} units",
+            f"{res['Missed Demand']:,.0f} units",
+            f"{res['Fill Rate']:.2f}%",
+            f"{res['Stockout Days']} days",
+            f"{res['Avg Physical Inventory']:,.0f} units",
+            f"${res['Avg Working Capital']:,.0f}"
+        ]
+    })
+    
+    st.dataframe(base_summary_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # ------------------------------------------------
+    # Sensitivity Analysis Section
+    # ------------------------------------------------
+    st.subheader("🔍 Scenario & Sensitivity Analysis")
+    st.markdown("Create multiple scenarios by adjusting parameters to compare working capital, fulfillment, and profitability tradeoffs.")
+    
+    # Build dynamic default scenarios based on the selected policy
+    if policy == "Continuous Review":
+        sens_defaults = pd.DataFrame({
+            "Scenario Name": ["Base Policy", "Aggressive (Low ROP)", "Conservative (High ROP)"],
+            "Reorder Point": [int(p1_val), int(p1_val * 0.8), int(p1_val * 1.2)],
+            "Order Quantity": [int(p2_val), int(p2_val * 1.2), int(p2_val * 0.8)]
+        })
+    else:
+        sens_defaults = pd.DataFrame({
+            "Scenario Name": ["Base Policy", "Frequent Reviews", "Infrequent Reviews"],
+            "Review Period (Days)": [int(p1_val), max(1, int(p1_val - 2)), int(p1_val + 2)],
+            "Order-Up-To Level (S)": [int(p2_val), int(p2_val * 0.8), int(p2_val * 1.2)]
+        })
+        
+    edited_sens_df = st.data_editor(sens_defaults, num_rows="dynamic", use_container_width=True)
+    
+    if st.button("Run Comparative Analysis", type="primary"):
+        with st.spinner("Simulating scenarios..."):
+            sens_results = []
+            for _, row in edited_sens_df.iterrows():
+                # Extract values safely depending on policy
+                s_p1 = row["Reorder Point"] if policy == "Continuous Review" else row["Review Period (Days)"]
+                s_p2 = row["Order Quantity"] if policy == "Continuous Review" else row["Order-Up-To Level (S)"]
+                    
+                s_res = run_simulation(
+                    sim_demand, policy, lead_time, s_p1, s_p2, opening_balance, 
+                    max_wait_time, unit_value, unit_profit, holding_cost_pct, ordering_cost
+                )
+                
+                sens_results.append({
+                    "Scenario": row["Scenario Name"],
+                    "Fill Rate (%)": f"{s_res['Fill Rate']:.2f}%",
+                    "Missed Demand": f"{s_res['Missed Demand']:,.0f}",
+                    "Stockout Days": s_res['Stockout Days'],
+                    "Avg Working Capital": f"${s_res['Avg Working Capital']:,.0f}",
+                    "Gross Profit": f"${s_res['Gross Profit']:,.0f}",
+                    "Holding Cost": f"${s_res['Total Holding Cost']:,.0f}",
+                    "Ordering Cost": f"${s_res['Total Ordering Cost']:,.0f}",
+                    "Total Inv Cost": f"${s_res['Total Inventory Cost']:,.0f}",
+                    "Net Profit": f"${s_res['Net Profit']:,.0f}"
+                })
+                
+            st.dataframe(pd.DataFrame(sens_results), use_container_width=True, hide_index=True)

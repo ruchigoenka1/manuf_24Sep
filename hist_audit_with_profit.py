@@ -350,76 +350,7 @@ if uploaded_file is not None:
     fig2.update_yaxes(rangemode="normal") 
     st.plotly_chart(fig2, use_container_width=True)
 
-    # ------------------------------------------------
-    # Data Table View (Inventory Behaviour)
-    # ------------------------------------------------
-    st.markdown("##### 🗃️ Data Table View")
-    data_view = st.selectbox(
-        "Select data to view:", 
-        options=["Simulated Data", "Historical Input Data"],
-        index=0
-    )
-    
-    if data_view == "Simulated Data":
-        st.dataframe(
-            df_filled[[time_col, 'Derived Demand', 'Physical Inventory', 'Net Inventory', 
-                       'Active Backorders', 'Daily Lost Sales', 'New Order']], 
-            use_container_width=True, 
-            hide_index=True
-        )
-    else:
-        st.dataframe(
-            df_filled[[time_col, balance_col, 'Derived Demand']], 
-            use_container_width=True, 
-            hide_index=True
-        )
-
-    # ------------------------------------------------
-    # Base Scenario Summary Table
-    # ------------------------------------------------
-    st.divider()
-    st.subheader("📊 Base Scenario Summary Table")
-    st.markdown("A consolidated tabular view of the profitability and operational metrics based on your current sidebar inputs.")
-    
-    base_summary_df = pd.DataFrame({
-        "Category": [
-            "Financial", "Financial", "Financial", "Financial", "Financial", 
-            "Operational", "Operational", "Operational", "Operational", "Operational",
-            "Capital", "Capital"
-        ],
-        "Metric": [
-            "Gross Profit (From Sales)", 
-            "Total Holding Cost", 
-            "Total Ordering Cost", 
-            "Total Inventory Cost", 
-            "Net Profit / Loss",
-            "Total Demand", 
-            "Total Sales Fulfilled", 
-            "Missed Demand", 
-            "Fill Rate", 
-            "Stockout Days",
-            "Avg Physical Inventory", 
-            "Avg Working Capital"
-        ],
-        "Value": [
-            f"${res['Gross Profit']:,.0f}",
-            f"${res['Total Holding Cost']:,.0f}",
-            f"${res['Total Ordering Cost']:,.0f}",
-            f"${res['Total Inventory Cost']:,.0f}",
-            f"${res['Net Profit']:,.0f}",
-            f"{res['Total Demand']:,.0f} units",
-            f"{res['Total Sales']:,.0f} units",
-            f"{res['Missed Demand']:,.0f} units",
-            f"{res['Fill Rate']:.2f}%",
-            f"{res['Stockout Days']} days",
-            f"{res['Avg Physical Inventory']:,.0f} units",
-            f"${res['Avg Working Capital']:,.0f}"
-        ]
-    })
-    
-    st.dataframe(base_summary_df, use_container_width=True, hide_index=True)
-
-    st.divider()
+    st.plotly_chart(fig2, use_container_width=True)
 
     # ------------------------------------------------
     # Demand Distribution & Frequency

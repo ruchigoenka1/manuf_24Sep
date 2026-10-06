@@ -413,6 +413,51 @@ if uploaded_file is not None:
         st.dataframe(df_hist.reset_index(), use_container_width=True, hide_index=True)
 
     # ------------------------------------------------
+    # Base Scenario Summary Table
+    # ------------------------------------------------
+    st.divider()
+    st.subheader("📊 Base Scenario Summary Table")
+    st.markdown("A consolidated tabular view of the profitability and operational metrics based on your current sidebar inputs.")
+    
+    base_summary_df = pd.DataFrame({
+        "Category": [
+            "Financial", "Financial", "Financial", "Financial", "Financial", 
+            "Operational", "Operational", "Operational", "Operational", "Operational",
+            "Capital", "Capital"
+        ],
+        "Metric": [
+            "Gross Profit (From Sales)", 
+            "Total Holding Cost", 
+            "Total Ordering Cost", 
+            "Total Inventory Cost", 
+            "Net Profit / Loss",
+            "Total Demand", 
+            "Total Sales Fulfilled", 
+            "Missed Demand", 
+            "Fill Rate", 
+            "Stockout Days",
+            "Avg Physical Inventory", 
+            "Avg Working Capital"
+        ],
+        "Value": [
+            f"${res['Gross Profit']:,.0f}",
+            f"${res['Total Holding Cost']:,.0f}",
+            f"${res['Total Ordering Cost']:,.0f}",
+            f"${res['Total Inventory Cost']:,.0f}",
+            f"${res['Net Profit']:,.0f}",
+            f"{res['Total Demand']:,.0f} units",
+            f"{res['Total Sales']:,.0f} units",
+            f"{res['Missed Demand']:,.0f} units",
+            f"{res['Fill Rate']:.2f}%",
+            f"{res['Stockout Days']} days",
+            f"{res['Avg Physical Inventory']:,.0f} units",
+            f"${res['Avg Working Capital']:,.0f}"
+        ]
+    })
+    
+    st.dataframe(base_summary_df, use_container_width=True, hide_index=True)
+
+    # ------------------------------------------------
     # Demand Distribution & Frequency
     # ------------------------------------------------
     with st.expander("📊 Demand Distribution & Frequency"):

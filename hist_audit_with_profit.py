@@ -547,10 +547,12 @@ if uploaded_file is not None:
             
         with calc_col2:
             st.markdown("**Calculate Service Level from Quantity**")
-            target_qty = st.number_input("Target Quantity (Units)", min_value=0.0, value=float(calc_qty), step=10.0)
+            # Calculate a static 95th percentile default for initialization to prevent dynamic resetting
+            default_qty = float(np.percentile(rolling_series, 95)) if len(rolling_series) > 0 else 0.0
+            
+            target_qty = st.number_input("Target Quantity (Units)", min_value=0.0, value=default_qty, step=10.0)
             calc_sl = (rolling_series <= target_qty).mean() * 100 if len(rolling_series) > 0 else 0
             st.info(f"Holding **{target_qty:,.0f}** units provides a **{calc_sl:.2f}%** service level over {rolling_window} days.")
-            
         st.divider()
         
         # Histogram Settings

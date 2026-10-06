@@ -350,7 +350,63 @@ if uploaded_file is not None:
     fig2.update_yaxes(rangemode="normal") 
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.plotly_chart(fig2, use_container_width=True)
+    # ------------------------------------------------
+    # Data Table View (Inventory Behaviour)
+    # ------------------------------------------------
+    st.markdown("##### 🗃️ Data Table View")
+    
+    # --- Reconstruct Detailed Data Table for the Main Simulation ---
+    main_closing = np.array(df_filled['Physical Inventory'])
+    main_net = np.array(df_filled['Net Inventory'])
+    main_new_order = np.array(df_filled['New Order'])
+    main_inv_pos = np.array(df_filled['Closing Net Including Pipeline'])
+    main_demand = df_filled['Derived Demand'].values
+    main_lost_sales = np.array(df_filled['Daily Lost Sales'])
+    
+    # Opening balance is the previous day's closing balance
+    main_opening = np.roll(main_closing, 1)
+    main_opening[0] = opening_balance
+    
+    # Shipments received are orders placed shifted by the lead time
+    main_shipments = np.roll(main_new_order, int(lead_time))
+    if int(lead_time) > 0:
+        main_shipments[:int(lead_time)] = 0 
+        
+    # Math flow: Opening + Received - Closing = Sales (fulfilled demand)
+    main_sales = main_opening + main_shipments - main_closing
+    main_pipeline = main_inv_pos - main_net
+    
+    daily_holding_rate = (holding_cost_pct / 100) / 365
+    main_inv_value = main_closing * unit_value
+    
+    # Build DataFrame mirroring the requested format
+    df_simulated_view = pd.DataFrame({
+        "Date": df_filled[time_col],
+        "Opening Balance": main_opening.astype(int),
+        "Demand": main_demand.astype(int),
+        "Shipment Received": main_shipments.astype(int),
+        "Pipeline Order": main_pipeline.astype(int),
+        "Inventory Position": main_inv_pos.astype(int),
+        "New Order": main_new_order.astype(int),
+        "Closing Balance": main_closing.astype(int),
+        "Closing Bal (Incl Pipeline)": main_inv_pos.astype(int),
+        "Sales": main_sales.astype(int),
+        "Lost Sales": main_lost_sales.astype(int), # Included as requested in previous steps
+        "Blocked Working Capital": (main_inv_pos * unit_value).round(2),
+        "Inventory Value": main_inv_value.round(2),
+        "Holding Cost": (main_inv_value * daily_holding_rate).round(2)
+    })
+    
+    # Clean up date format for display
+    if pd.api.types.is_datetime64_any_dtype(df_simulated_view["Date"]):
+        df_simulated_view["Date"] = df_simulated_view["Date"].dt.strftime('%Y-%m-%d')
+
+    st.markdown("**Simulated Data**")
+    st.dataframe(df_simulated_view, use_container_width=True, hide_index=True)
+    
+    with st.expander("📄 View Historical Input Data"):
+        # Show strictly the original columns from the uploaded file
+        st.dataframe(df_hist.reset_index(), use_container_width=True, hide_index=True)
 
     # ------------------------------------------------
     # Demand Distribution & Frequency

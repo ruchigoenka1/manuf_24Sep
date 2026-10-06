@@ -351,6 +351,30 @@ if uploaded_file is not None:
     st.plotly_chart(fig2, use_container_width=True)
 
     # ------------------------------------------------
+    # Data Table View (Inventory Behaviour)
+    # ------------------------------------------------
+    st.markdown("##### 🗃️ Data Table View")
+    data_view = st.selectbox(
+        "Select data to view:", 
+        options=["Simulated Data", "Historical Input Data"],
+        index=0
+    )
+    
+    if data_view == "Simulated Data":
+        st.dataframe(
+            df_filled[[time_col, 'Derived Demand', 'Physical Inventory', 'Net Inventory', 
+                       'Active Backorders', 'Daily Lost Sales', 'New Order']], 
+            use_container_width=True, 
+            hide_index=True
+        )
+    else:
+        st.dataframe(
+            df_filled[[time_col, balance_col, 'Derived Demand']], 
+            use_container_width=True, 
+            hide_index=True
+        )
+
+    # ------------------------------------------------
     # Base Scenario Summary Table
     # ------------------------------------------------
     st.divider()

@@ -602,11 +602,11 @@ if uploaded_file is not None:
             r_freq_df = pd.DataFrame({
                 "Bin Range": [f"{r_bin_edges[i]:.0f} to {r_bin_edges[i+1]:.0f}" for i in range(len(r_counts))],
                 "Frequency (Periods)": r_counts,
-                "Percentage (%)": (r_counts / len(rolling_series) * 100).round(2)
+                "Percentage (%)": (r_counts / len(rolling_series) * 100).round(2),
+                "Cumulative Percentage (%)": (r_counts.cumsum() / len(rolling_series) * 100).round(2)
             })
             
             st.dataframe(r_freq_df, use_container_width=True, hide_index=True)
-
     
     # ------------------------------------------------
     # Sensitivity Analysis Section

@@ -400,68 +400,67 @@ if uploaded_file is not None:
     # ------------------------------------------------
     # Demand Distribution & Frequency
     # ------------------------------------------------
-    st.subheader("📊 Demand Distribution & Frequency")
-    
-    st.markdown("**Historical Daily Demand Trend**")
-    fig_demand_trend = go.Figure()
-    fig_demand_trend.add_trace(go.Scatter(
-        x=df_filled[time_col],
-        y=df_filled['Derived Demand'],
-        mode="lines",
-        name="Daily Demand",
-        line=dict(color='#00CC96', width=2)
-    ))
-    fig_demand_trend.update_layout(
-        xaxis_title="Date",
-        yaxis_title="Demand Quantity"
-    )
-    fig_demand_trend = style_plotly_fig(fig_demand_trend)
-    st.plotly_chart(fig_demand_trend, use_container_width=True)
-    
-    hist_col1, hist_col2 = st.columns([1, 3])
-    
-    max_d = max(df_filled['Derived Demand'].max(), 1)
-    
-    with hist_col1:
-        st.markdown("**Histogram Settings**")
-        bin_method = st.radio("Define bins by:", ["Number of Bins", "Bin Size"])
-        
-        if bin_method == "Number of Bins":
-            num_bins = st.slider("Number of Bins", min_value=5, max_value=100, value=20)
-            bin_size = max_d / num_bins
-        else:
-            bin_size = st.number_input("Bin Size (Units)", min_value=1.0, value=10.0, step=5.0)
-            num_bins = int(np.ceil(max_d / bin_size)) if bin_size > 0 else 20
-
-    with hist_col2:
-        fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(
-            x=df_filled['Derived Demand'],
-            xbins=dict(start=0, end=max_d + bin_size, size=bin_size),
-            marker_color='skyblue',
-            name="Demand"
+    with st.expander("📊 Demand Distribution & Frequency"):
+        st.markdown("**Historical Daily Demand Trend**")
+        fig_demand_trend = go.Figure()
+        fig_demand_trend.add_trace(go.Scatter(
+            x=df_filled[time_col],
+            y=df_filled['Derived Demand'],
+            mode="lines",
+            name="Daily Demand",
+            line=dict(color='#00CC96', width=2)
         ))
-        fig_hist.update_layout(
-            title="Demand Frequency Histogram", 
-            xaxis_title="Demand Quantity", 
-            yaxis_title="Frequency (Days)",
-            bargap=0.05
+        fig_demand_trend.update_layout(
+            xaxis_title="Date",
+            yaxis_title="Demand Quantity"
         )
-        fig_hist = style_plotly_fig(fig_hist)
-        st.plotly_chart(fig_hist, use_container_width=True)
+        fig_demand_trend = style_plotly_fig(fig_demand_trend)
+        st.plotly_chart(fig_demand_trend, use_container_width=True)
+        
+        hist_col1, hist_col2 = st.columns([1, 3])
+        
+        max_d = max(df_filled['Derived Demand'].max(), 1)
+        
+        with hist_col1:
+            st.markdown("**Histogram Settings**")
+            bin_method = st.radio("Define bins by:", ["Number of Bins", "Bin Size"])
+            
+            if bin_method == "Number of Bins":
+                num_bins = st.slider("Number of Bins", min_value=5, max_value=100, value=20)
+                bin_size = max_d / num_bins
+            else:
+                bin_size = st.number_input("Bin Size (Units)", min_value=1.0, value=10.0, step=5.0)
+                num_bins = int(np.ceil(max_d / bin_size)) if bin_size > 0 else 20
 
-    st.markdown("**Frequency Table**")
-    
-    # Calculate Frequency Table using numpy based on the user's bin selections
-    counts, bin_edges = np.histogram(df_filled['Derived Demand'], bins=num_bins, range=(0, max_d))
-    
-    freq_df = pd.DataFrame({
-        "Bin Range": [f"{bin_edges[i]:.0f} to {bin_edges[i+1]:.0f}" for i in range(len(counts))],
-        "Frequency (Days)": counts,
-        "Percentage (%)": (counts / len(df_filled) * 100).round(2)
-    })
-    
-    st.dataframe(freq_df, use_container_width=True, hide_index=True)
+        with hist_col2:
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Histogram(
+                x=df_filled['Derived Demand'],
+                xbins=dict(start=0, end=max_d + bin_size, size=bin_size),
+                marker_color='skyblue',
+                name="Demand"
+            ))
+            fig_hist.update_layout(
+                title="Demand Frequency Histogram", 
+                xaxis_title="Demand Quantity", 
+                yaxis_title="Frequency (Days)",
+                bargap=0.05
+            )
+            fig_hist = style_plotly_fig(fig_hist)
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+        st.markdown("**Frequency Table**")
+        
+        # Calculate Frequency Table using numpy based on the user's bin selections
+        counts, bin_edges = np.histogram(df_filled['Derived Demand'], bins=num_bins, range=(0, max_d))
+        
+        freq_df = pd.DataFrame({
+            "Bin Range": [f"{bin_edges[i]:.0f} to {bin_edges[i+1]:.0f}" for i in range(len(counts))],
+            "Frequency (Days)": counts,
+            "Percentage (%)": (counts / len(df_filled) * 100).round(2)
+        })
+        
+        st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
 
     # ------------------------------------------------

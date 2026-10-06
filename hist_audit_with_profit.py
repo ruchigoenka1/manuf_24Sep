@@ -494,116 +494,116 @@ if uploaded_file is not None:
     
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🚀 Run Comparative Analysis", type="primary"):
-            with st.spinner("Simulating scenarios..."):
-                sens_results = []
-                scenario_inventories = {}  
-                scenario_dataframes = {} # Store full detailed tables
+        with st.spinner("Simulating scenarios..."):
+            sens_results = []
+            scenario_inventories = {}  
+            scenario_dataframes = {} 
+            
+            for _, row in edited_sens_df.iterrows():
+                # Extract values safely depending on policy
+                s_p1 = row["Reorder Point"] if policy == "Continuous Review" else row["Review Period (Days)"]
+                s_p2 = row["Order Quantity"] if policy == "Continuous Review" else row["Order-Up-To Level (S)"]
+                    
+                s_res = run_simulation(
+                    sim_demand, policy, int(lead_time), s_p1, s_p2, opening_balance, 
+                    max_wait_time, unit_value, unit_profit, holding_cost_pct, ordering_cost
+                )
                 
-                for _, row in edited_sens_df.iterrows():
-                    # Extract values safely depending on policy
-                    s_p1 = row["Reorder Point"] if policy == "Continuous Review" else row["Review Period (Days)"]
-                    s_p2 = row["Order Quantity"] if policy == "Continuous Review" else row["Order-Up-To Level (S)"]
-                        
-                    s_res = run_simulation(
-                        sim_demand, policy, int(lead_time), s_p1, s_p2, opening_balance, 
-                        max_wait_time, unit_value, unit_profit, holding_cost_pct, ordering_cost
-                    )
-                    
-                    sc_name = row["Scenario Name"]
-                    
-                    # Store the daily physical inventory for the graph
-                    scenario_inventories[sc_name] = s_res['Physical Inventory']
-                    
-                    # --- Reconstruct Detailed Data Table for this Scenario ---
-                    sc_closing = np.array(s_res['Physical Inventory'])
-                    sc_net = np.array(s_res['Net Inventory'])
-                    sc_new_order = np.array(s_res['New Order'])
-                    sc_inv_pos = np.array(s_res['Closing Net Including Pipeline'])
-                    
-                    # Opening balance is the previous day's closing balance
-                    sc_opening = np.roll(sc_closing, 1)
-                    sc_opening[0] = opening_balance
-                    
-                    # Shipments received are orders placed shifted by the lead time
-                    sc_shipments = np.roll(sc_new_order, int(lead_time))
-                    if int(lead_time) > 0:
-                        sc_shipments[:int(lead_time)] = 0 
-                    
-                    # Math flow: Opening + Received - Closing = Sales (fulfilled demand)
-                    sc_sales = sc_opening + sc_shipments - sc_closing
-                    sc_pipeline = sc_inv_pos - sc_net
-                    
-                    daily_holding_rate = (holding_cost_pct / 100) / 365
-                    sc_inv_value = sc_closing * unit_value
-                    
-                    # Build DataFrame mirroring the requested format
-                    df_scenario = pd.DataFrame({
-                        "Date": df_filled[time_col],
-                        "Opening Balance": sc_opening.astype(int),
-                        "Demand": sim_demand.astype(int),
-                        "Shipment Received": sc_shipments.astype(int),
-                        "Pipeline Order": sc_pipeline.astype(int),
-                        "Inventory Position": sc_inv_pos.astype(int),
-                        "New Order": sc_new_order.astype(int),
-                        "Closing Balance": sc_closing.astype(int),
-                        "Closing Bal (Incl Pipeline)": sc_inv_pos.astype(int),
-                        "Sales": sc_sales.astype(int),
-                        "Blocked Working Capital": (sc_inv_pos * unit_value).round(2),
-                        "Inventory Value": sc_inv_value.round(2),
-                        "Holding Cost": (sc_inv_value * daily_holding_rate).round(2)
-                    })
-                    
-                    # Clean up date format for display
-                    if pd.api.types.is_datetime64_any_dtype(df_scenario["Date"]):
-                        df_scenario["Date"] = df_scenario["Date"].dt.strftime('%Y-%m-%d')
-                        
-                    scenario_dataframes[sc_name] = df_scenario
-    
-                    # Collect high-level metrics for the summary table
-                    sens_results.append({
-                        "Scenario": sc_name,
-                        "Reorder Point / Review Period": s_p1,
-                        "Order Qty / Target Level (S)": s_p2,
-                        "Fill Rate (%)": f"{s_res['Fill Rate']:.2f}%",
-                        "Missed Demand": f"{s_res['Missed Demand']:,.0f}",
-                        "Stockout Days": s_res['Stockout Days'],
-                        "Avg Working Capital": f"${s_res['Avg Working Capital']:,.0f}",
-                        "Gross Profit": f"${s_res['Gross Profit']:,.0f}",
-                        "Holding Cost": f"${s_res['Total Holding Cost']:,.0f}",
-                        "Ordering Cost": f"${s_res['Total Ordering Cost']:,.0f}",
-                        "Total Inv Cost": f"${s_res['Total Inventory Cost']:,.0f}",
-                        "Net Profit": f"${s_res['Net Profit']:,.0f}"
-                    })
-                    
-                # Convert to DataFrame, set Scenario as index, transpose, and reset index for display
-                df_res = pd.DataFrame(sens_results).set_index("Scenario").T.reset_index()
-                df_res.rename(columns={"index": "Metric"}, inplace=True)
+                sc_name = row["Scenario Name"]
                 
-                st.dataframe(df_res, use_container_width=True, hide_index=True)
-    
-                # ------------------------------------------------
-                # Scenario Comparison Chart
-                # ------------------------------------------------
-                st.markdown("##### 📈 Scenario Comparison: Physical Inventory Balance")
-                fig_comp = go.Figure()
+                # Store the daily physical inventory for the graph
+                scenario_inventories[sc_name] = s_res['Physical Inventory']
                 
-                for sc_name, inv_data in scenario_inventories.items():
-                    fig_comp.add_trace(go.Scatter(
-                        x=df_filled[time_col], 
-                        y=inv_data, 
-                        mode="lines", 
-                        name=sc_name,
-                        opacity=0.8
-                    ))
+                # --- Reconstruct Detailed Data Table for this Scenario ---
+                sc_closing = np.array(s_res['Physical Inventory'])
+                sc_net = np.array(s_res['Net Inventory'])
+                sc_new_order = np.array(s_res['New Order'])
+                sc_inv_pos = np.array(s_res['Closing Net Including Pipeline'])
+                sc_lost_sales = np.array(s_res['Daily Lost Sales'])
                 
-                fig_comp = style_plotly_fig(fig_comp)
-                st.plotly_chart(fig_comp, use_container_width=True)
-    
-                # ------------------------------------------------
-                # Collapsible Detailed Scenario Data Table
-                # ------------------------------------------------
-                with st.expander("📄 View Detailed Scenario Data"):
-                    selected_sc = st.selectbox("Select Scenario to view data:", options=list(scenario_dataframes.keys()))
-                    st.dataframe(scenario_dataframes[selected_sc], use_container_width=True, hide_index=True)
-    
-    
+                # Opening balance is the previous day's closing balance
+                sc_opening = np.roll(sc_closing, 1)
+                sc_opening[0] = opening_balance
+                
+                # Shipments received are orders placed shifted by the lead time
+                sc_shipments = np.roll(sc_new_order, int(lead_time))
+                if int(lead_time) > 0:
+                    sc_shipments[:int(lead_time)] = 0 
+                
+                # Math flow: Opening + Received - Closing = Sales (fulfilled demand)
+                sc_sales = sc_opening + sc_shipments - sc_closing
+                sc_pipeline = sc_inv_pos - sc_net
+                
+                daily_holding_rate = (holding_cost_pct / 100) / 365
+                sc_inv_value = sc_closing * unit_value
+                
+                # Build DataFrame mirroring the requested format
+                df_scenario = pd.DataFrame({
+                    "Date": df_filled[time_col],
+                    "Opening Balance": sc_opening.astype(int),
+                    "Demand": sim_demand.astype(int),
+                    "Shipment Received": sc_shipments.astype(int),
+                    "Pipeline Order": sc_pipeline.astype(int),
+                    "Inventory Position": sc_inv_pos.astype(int),
+                    "New Order": sc_new_order.astype(int),
+                    "Closing Balance": sc_closing.astype(int),
+                    "Closing Bal (Incl Pipeline)": sc_inv_pos.astype(int),
+                    "Sales": sc_sales.astype(int),
+                    "Lost Sales": sc_lost_sales.astype(int),
+                    "Blocked Working Capital": (sc_inv_pos * unit_value).round(2),
+                    "Inventory Value": sc_inv_value.round(2),
+                    "Holding Cost": (sc_inv_value * daily_holding_rate).round(2)
+                })
+                
+                # Clean up date format for display
+                if pd.api.types.is_datetime64_any_dtype(df_scenario["Date"]):
+                    df_scenario["Date"] = df_scenario["Date"].dt.strftime('%Y-%m-%d')
+                    
+                scenario_dataframes[sc_name] = df_scenario
+
+                # Collect high-level metrics for the summary table
+                sens_results.append({
+                    "Scenario": sc_name,
+                    "Reorder Point / Review Period": s_p1,
+                    "Order Qty / Target Level (S)": s_p2,
+                    "Fill Rate (%)": f"{s_res['Fill Rate']:.2f}%",
+                    "Missed Demand": f"{s_res['Missed Demand']:,.0f}",
+                    "Stockout Days": s_res['Stockout Days'],
+                    "Avg Working Capital": f"${s_res['Avg Working Capital']:,.0f}",
+                    "Gross Profit": f"${s_res['Gross Profit']:,.0f}",
+                    "Holding Cost": f"${s_res['Total Holding Cost']:,.0f}",
+                    "Ordering Cost": f"${s_res['Total Ordering Cost']:,.0f}",
+                    "Total Inv Cost": f"${s_res['Total Inventory Cost']:,.0f}",
+                    "Net Profit": f"${s_res['Net Profit']:,.0f}"
+                })
+                
+            # Convert to DataFrame, set Scenario as index, transpose, and reset index for display
+            df_res = pd.DataFrame(sens_results).set_index("Scenario").T.reset_index()
+            df_res.rename(columns={"index": "Metric"}, inplace=True)
+            
+            st.dataframe(df_res, use_container_width=True, hide_index=True)
+
+            # ------------------------------------------------
+            # Scenario Comparison Chart
+            # ------------------------------------------------
+            st.markdown("##### 📈 Scenario Comparison: Physical Inventory Balance")
+            fig_comp = go.Figure()
+            
+            for sc_name, inv_data in scenario_inventories.items():
+                fig_comp.add_trace(go.Scatter(
+                    x=df_filled[time_col], 
+                    y=inv_data, 
+                    mode="lines", 
+                    name=sc_name,
+                    opacity=0.8
+                ))
+            
+            fig_comp = style_plotly_fig(fig_comp)
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+            # ------------------------------------------------
+            # Collapsible Detailed Scenario Data Table
+            # ------------------------------------------------
+            with st.expander("📄 View Detailed Scenario Data"):
+                selected_sc = st.selectbox("Select Scenario to view data:", options=list(scenario_dataframes.keys()))
+                st.dataframe(scenario_dataframes[selected_sc], use_container_width=True, hide_index=True)

@@ -492,6 +492,12 @@ if uploaded_file is not None:
 
     edited_sens_df = pd.DataFrame(scenarios)
     
+    # Initialize session state variables to hold our scenario data
+    if "scenario_results" not in st.session_state:
+        st.session_state.scenario_results = None
+        st.session_state.scenario_inventories = None
+        st.session_state.scenario_dataframes = None
+
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🚀 Run Comparative Analysis", type="primary"):
         with st.spinner("Simulating scenarios..."):
@@ -581,29 +587,36 @@ if uploaded_file is not None:
             df_res = pd.DataFrame(sens_results).set_index("Scenario").T.reset_index()
             df_res.rename(columns={"index": "Metric"}, inplace=True)
             
-            st.dataframe(df_res, use_container_width=True, hide_index=True)
+            # Save the computed results into session state so they survive reruns
+            st.session_state.scenario_results = df_res
+            st.session_state.scenario_inventories = scenario_inventories
+            st.session_state.scenario_dataframes = scenario_dataframes
 
-            # ------------------------------------------------
-            # Scenario Comparison Chart
-            # ------------------------------------------------
-            st.markdown("##### 📈 Scenario Comparison: Physical Inventory Balance")
-            fig_comp = go.Figure()
-            
-            for sc_name, inv_data in scenario_inventories.items():
-                fig_comp.add_trace(go.Scatter(
-                    x=df_filled[time_col], 
-                    y=inv_data, 
-                    mode="lines", 
-                    name=sc_name,
-                    opacity=0.8
-                ))
-            
-            fig_comp = style_plotly_fig(fig_comp)
-            st.plotly_chart(fig_comp, use_container_width=True)
+    # Render the results outside of the button condition so they persist
+    if st.session_state.scenario_results is not None:
+        st.dataframe(st.session_state.scenario_results, use_container_width=True, hide_index=True)
 
-            # ------------------------------------------------
-            # Collapsible Detailed Scenario Data Table
-            # ------------------------------------------------
-            with st.expander("📄 View Detailed Scenario Data"):
-                selected_sc = st.selectbox("Select Scenario to view data:", options=list(scenario_dataframes.keys()))
-                st.dataframe(scenario_dataframes[selected_sc], use_container_width=True, hide_index=True)
+        # ------------------------------------------------
+        # Scenario Comparison Chart
+        # ------------------------------------------------
+        st.markdown("##### 📈 Scenario Comparison: Physical Inventory Balance")
+        fig_comp = go.Figure()
+        
+        for sc_name, inv_data in st.session_state.scenario_inventories.items():
+            fig_comp.add_trace(go.Scatter(
+                x=df_filled[time_col], 
+                y=inv_data, 
+                mode="lines", 
+                name=sc_name,
+                opacity=0.8
+            ))
+        
+        fig_comp = style_plotly_fig(fig_comp)
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+        # ------------------------------------------------
+        # Collapsible Detailed Scenario Data Table
+        # ------------------------------------------------
+        with st.expander("📄 View Detailed Scenario Data"):
+            selected_sc = st.selectbox("Select Scenario to view data:", options=list(st.session_state.scenario_dataframes.keys()))
+            st.dataframe(st.session_state.scenario_dataframes[selected_sc], use_container_width=True, hide_index=True)

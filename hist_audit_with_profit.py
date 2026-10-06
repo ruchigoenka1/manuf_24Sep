@@ -249,7 +249,7 @@ if uploaded_file is not None:
             ref_line, ref_label = p2_val, "Target Level (S)"
         
         opening_balance = st.sidebar.number_input("Opening Balance", value=default_ob)
-        max_wait_time = st.sidebar.number_input("Max Customer Wait Time (Days)", value=5, min_value=0)
+        max_wait_time = st.sidebar.number_input("Max Customer Wait Time (Days)", value=0, min_value=0)
         
         st.sidebar.divider()
         st.sidebar.header("Financial Inputs")

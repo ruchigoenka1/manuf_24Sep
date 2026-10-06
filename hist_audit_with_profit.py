@@ -464,4 +464,8 @@ if uploaded_file is not None:
                     "Net Profit": f"${s_res['Net Profit']:,.0f}"
                 })
                 
-            st.dataframe(pd.DataFrame(sens_results), use_container_width=True, hide_index=True)
+            # Convert to DataFrame, set Scenario as index, transpose, and reset index for display
+            df_res = pd.DataFrame(sens_results).set_index("Scenario").T.reset_index()
+            df_res.rename(columns={"index": "Metric"}, inplace=True)
+            
+            st.dataframe(df_res, use_container_width=True, hide_index=True)

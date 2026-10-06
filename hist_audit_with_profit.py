@@ -115,12 +115,17 @@ def run_simulation(sim_demand, policy, lead_time, p1, p2, opening_balance, max_w
             if inventory_position < rop:
                 new_order = order_qty
                 pipeline_orders.append((day + lead_time, order_qty))
-        else:
+        elif policy == "Periodic Review":
             review_period, order_up_to_S = p1, p2
             if day % review_period == 0:
                 if inventory_position < order_up_to_S:
                     new_order = order_up_to_S - inventory_position
                     pipeline_orders.append((day + lead_time, new_order))
+        elif policy == "Min/Max Policy":
+            min_level, max_level = p1, p2
+            if inventory_position <= min_level:
+                new_order = max_level - inventory_position
+                pipeline_orders.append((day + lead_time, new_order))
 
         closing_net_with_pipeline = net_inventory + pipeline_qty
 
@@ -231,7 +236,7 @@ if uploaded_file is not None:
     # ------------------------------------------------
     st.sidebar.header("Simulation Parameters")
     
-    policy = st.sidebar.radio("Inventory Policy", ["Continuous Review", "Periodic Review"])
+    policy = st.sidebar.radio("Inventory Policy", ["Continuous Review", "Periodic Review", "Min/Max Policy"])
     lead_time = st.sidebar.number_input("Lead Time (Days)", value=3)
 
     p1_val, p2_val = 0, 0
@@ -240,13 +245,19 @@ if uploaded_file is not None:
         p2_val = st.sidebar.number_input("Order Quantity", value=300)
         default_ob = int(1.25 * p1_val)
         ref_line, ref_label = p1_val, "Reorder Point"
-    else:
+    elif policy == "Periodic Review":
         p1_val = st.sidebar.number_input("Review Period (Days)", value=7)
         default_S = int(round(avg_demand_hist * (p1_val + lead_time) * 1.5)) if avg_demand_hist > 0 else 500
         p2_val = st.sidebar.number_input("Order-Up-To Level (S)", min_value=1, value=max(1, default_S))
         default_ob = int(1.25 * p2_val)
         ref_line, ref_label = p2_val, "Target Level (S)"
-    
+    else: # Min/Max Policy
+        p1_val = st.sidebar.number_input("Min Level (Reorder Point)", value=200)
+        default_max = int(p1_val * 2) if p1_val > 0 else 500
+        p2_val = st.sidebar.number_input("Max Level (Order-Up-To)", value=default_max)
+        default_ob = int(p2_val)
+        ref_line, ref_label = p1_val, "Min Level"
+        
     opening_balance = st.sidebar.number_input("Opening Balance", value=default_ob)
     max_wait_time = st.sidebar.number_input("Max Customer Wait Time (Days)", value=0, min_value=0)
     
@@ -386,12 +397,26 @@ if uploaded_file is not None:
 
     st.divider()
 
-
     # ------------------------------------------------
     # Demand Distribution & Frequency
     # ------------------------------------------------
-    # st.divider()
     st.subheader("📊 Demand Distribution & Frequency")
+    
+    st.markdown("**Historical Daily Demand Trend**")
+    fig_demand_trend = go.Figure()
+    fig_demand_trend.add_trace(go.Scatter(
+        x=df_filled[time_col],
+        y=df_filled['Derived Demand'],
+        mode="lines",
+        name="Daily Demand",
+        line=dict(color='#00CC96', width=2)
+    ))
+    fig_demand_trend.update_layout(
+        xaxis_title="Date",
+        yaxis_title="Demand Quantity"
+    )
+    fig_demand_trend = style_plotly_fig(fig_demand_trend)
+    st.plotly_chart(fig_demand_trend, use_container_width=True)
     
     hist_col1, hist_col2 = st.columns([1, 3])
     
@@ -438,12 +463,11 @@ if uploaded_file is not None:
     
     st.dataframe(freq_df, use_container_width=True, hide_index=True)
 
-    
-    
 
     # ------------------------------------------------
     # Sensitivity Analysis Section
     # ------------------------------------------------
+    st.divider()
     st.subheader("🔍 Scenario & Sensitivity Analysis")
     st.markdown("Create multiple scenarios using the input boxes below to compare working capital, fulfillment, and profitability tradeoffs.")
     
@@ -470,7 +494,7 @@ if uploaded_file is not None:
             s3_p1 = st.number_input("Reorder Point", value=int(p1_val * 1.2), key="s3_p1")
             s3_p2 = st.number_input("Order Quantity", value=int(p2_val * 0.8), key="s3_p2")
             scenarios.append({"Scenario Name": s3_name, "Reorder Point": s3_p1, "Order Quantity": s3_p2})
-    else:
+    elif policy == "Periodic Review":
         with col1:
             st.markdown("#### Scenario 1")
             s1_name = st.text_input("Scenario Name", value="Base Policy", key="sp1_n")
@@ -489,6 +513,25 @@ if uploaded_file is not None:
             s3_p1 = st.number_input("Review Period (Days)", value=int(p1_val + 2), key="sp3_p1")
             s3_p2 = st.number_input("Order-Up-To Level (S)", value=int(p2_val * 1.2), key="sp3_p2")
             scenarios.append({"Scenario Name": s3_name, "Review Period (Days)": s3_p1, "Order-Up-To Level (S)": s3_p2})
+    else: # Min/Max Policy
+        with col1:
+            st.markdown("#### Scenario 1")
+            s1_name = st.text_input("Scenario Name", value="Base Policy", key="sm1_n")
+            s1_p1 = st.number_input("Min Level", value=int(p1_val), key="sm1_p1")
+            s1_p2 = st.number_input("Max Level", value=int(p2_val), key="sm1_p2")
+            scenarios.append({"Scenario Name": s1_name, "Min Level": s1_p1, "Max Level": s1_p2})
+        with col2:
+            st.markdown("#### Scenario 2")
+            s2_name = st.text_input("Scenario Name", value="Aggressive (Low Min)", key="sm2_n")
+            s2_p1 = st.number_input("Min Level", value=int(p1_val * 0.8), key="sm2_p1")
+            s2_p2 = st.number_input("Max Level", value=int(p2_val), key="sm2_p2")
+            scenarios.append({"Scenario Name": s2_name, "Min Level": s2_p1, "Max Level": s2_p2})
+        with col3:
+            st.markdown("#### Scenario 3")
+            s3_name = st.text_input("Scenario Name", value="Conservative (High Min)", key="sm3_n")
+            s3_p1 = st.number_input("Min Level", value=int(p1_val * 1.2), key="sm3_p1")
+            s3_p2 = st.number_input("Max Level", value=int(p2_val * 1.2), key="sm3_p2")
+            scenarios.append({"Scenario Name": s3_name, "Min Level": s3_p1, "Max Level": s3_p2})
 
     edited_sens_df = pd.DataFrame(scenarios)
     
@@ -507,8 +550,15 @@ if uploaded_file is not None:
             
             for _, row in edited_sens_df.iterrows():
                 # Extract values safely depending on policy
-                s_p1 = row["Reorder Point"] if policy == "Continuous Review" else row["Review Period (Days)"]
-                s_p2 = row["Order Quantity"] if policy == "Continuous Review" else row["Order-Up-To Level (S)"]
+                if policy == "Continuous Review":
+                    s_p1 = row["Reorder Point"]
+                    s_p2 = row["Order Quantity"]
+                elif policy == "Periodic Review":
+                    s_p1 = row["Review Period (Days)"]
+                    s_p2 = row["Order-Up-To Level (S)"]
+                else: # Min/Max
+                    s_p1 = row["Min Level"]
+                    s_p2 = row["Max Level"]
                     
                 s_res = run_simulation(
                     sim_demand, policy, int(lead_time), s_p1, s_p2, opening_balance, 
@@ -570,8 +620,8 @@ if uploaded_file is not None:
                 # Collect high-level metrics for the summary table
                 sens_results.append({
                     "Scenario": sc_name,
-                    "Reorder Point / Review Period": s_p1,
-                    "Order Qty / Target Level (S)": s_p2,
+                    "Policy Param 1 (ROP/Review/Min)": s_p1,
+                    "Policy Param 2 (Qty/Target/Max)": s_p2,
                     "Fill Rate (%)": f"{s_res['Fill Rate']:.2f}%",
                     "Missed Demand": f"{s_res['Missed Demand']:,.0f}",
                     "Stockout Days": s_res['Stockout Days'],

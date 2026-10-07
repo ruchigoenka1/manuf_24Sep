@@ -461,6 +461,25 @@ if uploaded_file is not None:
     # Demand Distribution & Frequency
     # ------------------------------------------------
     with st.expander("📊 Demand Distribution & Frequency"):
+        
+        # Calculate Key Demand Metrics
+        demand_mean = df_filled['Derived Demand'].mean()
+        demand_std = df_filled['Derived Demand'].std()
+        demand_cov = demand_std / demand_mean if demand_mean > 0 else 0
+        
+        st.markdown("**Key Demand Metrics**")
+        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+        kpi_col1.metric("Average Daily Demand", f"{demand_mean:.2f}")
+        kpi_col2.metric("Standard Deviation", f"{demand_std:.2f}")
+        kpi_col3.metric("Coefficient of Variation (COV)", f"{demand_cov:.2f}")
+        
+        st.divider()
+
+        # Existing trend chart code continues below...
+        st.markdown("**Historical Daily Demand Trend**")
+        fig_demand_trend = go.Figure()
+        
+        
         st.markdown("**Historical Daily Demand Trend**")
         fig_demand_trend = go.Figure()
         fig_demand_trend.add_trace(go.Scatter(

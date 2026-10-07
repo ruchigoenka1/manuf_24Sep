@@ -488,8 +488,8 @@ if uploaded_file is not None:
         fig_demand_trend = go.Figure()
         
         
-        st.markdown("**Historical Daily Demand Trend**")
-        fig_demand_trend = go.Figure()
+        # st.markdown("**Historical Daily Demand Trend**")
+        # fig_demand_trend = go.Figure()
         fig_demand_trend.add_trace(go.Scatter(
             x=df_filled[time_col],
             y=df_filled['Derived Demand'],

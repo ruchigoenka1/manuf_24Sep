@@ -423,7 +423,7 @@ if uploaded_file is not None:
         "Category": [
             "Financial", "Financial", "Financial", "Financial", "Financial", 
             "Operational", "Operational", "Operational", "Operational", "Operational",
-            "Capital", "Capital"
+            "Capital", "Capital", "Capital", "Capital"
         ],
         "Metric": [
             "Gross Profit (From Sales)", 
@@ -436,7 +436,9 @@ if uploaded_file is not None:
             "Missed Demand", 
             "Fill Rate", 
             "Stockout Days",
-            "Avg Physical Inventory", 
+            "Avg Physical Inventory",
+            "Min Physical Inventory",
+            "Max Physical Inventory",
             "Avg Working Capital"
         ],
         "Value": [
@@ -451,6 +453,8 @@ if uploaded_file is not None:
             f"{res['Fill Rate']:.2f}%",
             f"{res['Stockout Days']} days",
             f"{res['Avg Physical Inventory']:,.0f} units",
+            f"{min(res['Physical Inventory']):,.0f} units",
+            f"{max(res['Physical Inventory']):,.0f} units",
             f"${res['Avg Working Capital']:,.0f}"
         ]
     })

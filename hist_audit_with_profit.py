@@ -466,12 +466,16 @@ if uploaded_file is not None:
         demand_mean = df_filled['Derived Demand'].mean()
         demand_std = df_filled['Derived Demand'].std()
         demand_cov = demand_std / demand_mean if demand_mean > 0 else 0
+        demand_min = df_filled['Derived Demand'].min()
+        demand_max = df_filled['Derived Demand'].max()
         
         st.markdown("**Key Demand Metrics**")
-        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
-        kpi_col1.metric("Average Daily Demand", f"{demand_mean:.2f}")
-        kpi_col2.metric("Standard Deviation", f"{demand_std:.2f}")
-        kpi_col3.metric("Coefficient of Variation (COV)", f"{demand_cov:.2f}")
+        kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
+        kpi_col1.metric("Avg Demand", f"{demand_mean:.2f}")
+        kpi_col2.metric("Std Dev", f"{demand_std:.2f}")
+        kpi_col3.metric("COV", f"{demand_cov:.2f}")
+        kpi_col4.metric("Min Demand", f"{demand_min:,.0f}")
+        kpi_col5.metric("Max Demand", f"{demand_max:,.0f}")
         
         st.divider()
 

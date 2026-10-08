@@ -172,18 +172,42 @@ if uploaded_file is not None:
                 pipeline.append((day + int(lead_time), sim_q))
                 orders_placed += 1
                 
+        # Calculate Dashboard Metrics
         total_fulfilled = total_demand - lost_sales
         fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
         avg_inv_sim = np.mean(phys_balances)
+        min_inv_sim = np.min(phys_balances)
+        max_inv_sim = np.max(phys_balances)
         
         hc_sim = avg_inv_sim * period_holding_cost_per_unit
         oc_sim = orders_placed * fixed_ordering_cost
         
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        sc1.metric("Fill Rate", f"{fill_rate:.2f}%")
-        sc2.metric("Stockout Days", f"{stockout_days}")
-        sc3.metric("Total Orders Placed", f"{orders_placed}")
-        sc4.metric("Total Period Cost", f"${(hc_sim + oc_sim):,.0f}")
+        # Render Metrics in Layout Match
+        st.markdown(f"#### Results for Order Quantity: **{sim_q:,.0f} units**")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Fill Rate", f"{fill_rate:.2f}%")
+        c2.metric("Stockout Days", f"{stockout_days} days")
+        c3.metric("Total Period Demand", f"{total_demand:,.0f} units")
+        c4.metric("Missed Sales", f"{lost_sales:,.0f} units")
+        
+        st.markdown("**Inventory Holding Analysis**")
+        ic1, ic2, ic3 = st.columns(3)
+        ic1.metric("Avg Inventory (Units)", f"{avg_inv_sim:,.0f}")
+        ic2.metric("Min Inventory (Units)", f"{min_inv_sim:,.0f}")
+        ic3.metric("Max Inventory (Units)", f"{max_inv_sim:,.0f}")
+        
+        vc1, vc2, vc3 = st.columns(3)
+        vc1.metric("Avg Capital Blocked ($)", f"${(avg_inv_sim * unit_value):,.0f}")
+        vc2.metric("Min Capital Blocked ($)", f"${(min_inv_sim * unit_value):,.0f}")
+        vc3.metric("Max Capital Blocked ($)", f"${(max_inv_sim * unit_value):,.0f}")
+        
+        st.markdown("**Operational Cost Analysis**")
+        oc1, oc2, oc3, oc4 = st.columns(4)
+        oc1.metric("Total Orders Placed", f"{orders_placed}")
+        oc2.metric("Period Holding Cost", f"${hc_sim:,.0f}")
+        oc3.metric("Period Ordering Cost", f"${oc_sim:,.0f}")
+        oc4.metric("Total Inventory Cost", f"${(hc_sim + oc_sim):,.0f}")
         
     with st.expander(f"📊 View Empirical Lead Time ({lead_time} Days) Frequency Table"):
         st.markdown(f"**Rolling {lead_time}-Day Demand based on uploaded historical data:**")
@@ -275,18 +299,42 @@ if uploaded_file is not None:
                     pipeline.append((day + int(lead_time), order_qty))
                     orders_placed += 1
                     
+        # Calculate Dashboard Metrics
         total_fulfilled = total_demand - lost_sales
         fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
         avg_inv_sim_pr = np.mean(phys_balances)
+        min_inv_sim_pr = np.min(phys_balances)
+        max_inv_sim_pr = np.max(phys_balances)
         
         hc_sim_pr = avg_inv_sim_pr * period_holding_cost_per_unit
         oc_sim_pr = orders_placed * fixed_ordering_cost
         
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        sc1.metric("Fill Rate", f"{fill_rate:.2f}%")
-        sc2.metric("Stockout Days", f"{stockout_days}")
-        sc3.metric("Total Orders Placed", f"{orders_placed}")
-        sc4.metric("Total Period Cost", f"${(hc_sim_pr + oc_sim_pr):,.0f}")
+        # Render Metrics in Layout Match
+        st.markdown(f"#### Results for Review Period: **{sim_t} days** (Target Level: {sim_s:,.0f} units)")
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Fill Rate", f"{fill_rate:.2f}%")
+        c2.metric("Stockout Days", f"{stockout_days} days")
+        c3.metric("Total Period Demand", f"{total_demand:,.0f} units")
+        c4.metric("Missed Sales", f"{lost_sales:,.0f} units")
+        
+        st.markdown("**Inventory Holding Analysis**")
+        ic1, ic2, ic3 = st.columns(3)
+        ic1.metric("Avg Inventory (Units)", f"{avg_inv_sim_pr:,.0f}")
+        ic2.metric("Min Inventory (Units)", f"{min_inv_sim_pr:,.0f}")
+        ic3.metric("Max Inventory (Units)", f"{max_inv_sim_pr:,.0f}")
+        
+        vc1, vc2, vc3 = st.columns(3)
+        vc1.metric("Avg Capital Blocked ($)", f"${(avg_inv_sim_pr * unit_value):,.0f}")
+        vc2.metric("Min Capital Blocked ($)", f"${(min_inv_sim_pr * unit_value):,.0f}")
+        vc3.metric("Max Capital Blocked ($)", f"${(max_inv_sim_pr * unit_value):,.0f}")
+        
+        st.markdown("**Operational Cost Analysis**")
+        oc1, oc2, oc3, oc4 = st.columns(4)
+        oc1.metric("Total Orders Placed", f"{orders_placed}")
+        oc2.metric("Period Holding Cost", f"${hc_sim_pr:,.0f}")
+        oc3.metric("Period Ordering Cost", f"${oc_sim_pr:,.0f}")
+        oc4.metric("Total Inventory Cost", f"${(hc_sim_pr + oc_sim_pr):,.0f}")
 
     with st.expander(f"📊 View Empirical Protection Interval ({sim_t + lead_time} Days) Frequency Table"):
         st.markdown(f"**Rolling {sim_t + lead_time}-Day Demand (Review Period + Lead Time) based on uploaded historical data:**")

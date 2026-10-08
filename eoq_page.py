@@ -55,7 +55,31 @@ else:
 
 st.divider()
 st.subheader("Theoretical Cost Analysis")
-st.info(f"**Calculated Economic Order Quantity (EOQ):** {eoq:,.0f} units")
+st.divider()
+st.subheader("Theoretical Cost Analysis")
+
+if eoq > 0:
+    # Calculate optimal metrics at EOQ
+    opt_num_orders = annual_demand / eoq
+    opt_avg_inv = eoq / 2
+    opt_holding_cost = opt_avg_inv * annual_holding_cost_per_unit
+    opt_ordering_cost = opt_num_orders * fixed_ordering_cost
+    opt_total_cost = opt_holding_cost + opt_ordering_cost
+
+    st.markdown("#### Optimal EOQ Policy Metrics")
+    eoq_c1, eoq_c2, eoq_c3 = st.columns(3)
+    eoq_c1.metric("Economic Order Qty (EOQ)", f"{eoq:,.0f} units")
+    eoq_c2.metric("No of Orders (per year)", f"{opt_num_orders:,.1f}")
+    eoq_c3.metric("Average Inventory", f"{opt_avg_inv:,.0f} units")
+
+    eoq_c4, eoq_c5, eoq_c6 = st.columns(3)
+    eoq_c4.metric("Annual Holding Cost", f"${opt_holding_cost:,.0f}")
+    eoq_c5.metric("Annual Ordering Cost", f"${opt_ordering_cost:,.0f}")
+    eoq_c6.metric("Total Inventory Cost", f"${opt_total_cost:,.0f}")
+    
+    st.divider()
+else:
+    st.warning("Please enter valid parameters to calculate EOQ.")
 
 # Generate Data Table for Cost Curves
 # Generate Data Table for Cost Curves

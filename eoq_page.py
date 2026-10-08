@@ -58,18 +58,28 @@ st.subheader("Theoretical Cost Analysis")
 st.info(f"**Calculated Economic Order Quantity (EOQ):** {eoq:,.0f} units")
 
 # Generate Data Table for Cost Curves
+# Generate Data Table for Cost Curves
 if eoq > 0:
     # Create an array of quantities ranging from 20% of EOQ to 200% of EOQ
     q_range = np.linspace(max(10, eoq * 0.2), eoq * 2, 20).astype(int)
     
     cost_data = []
     for q in q_range:
-        holding = (q / 2) * annual_holding_cost_per_unit
-        ordering = (annual_demand / q) * fixed_ordering_cost
+        avg_inv = q / 2
+        num_orders = annual_demand / q
+        holding = avg_inv * annual_holding_cost_per_unit
+        ordering = num_orders * fixed_ordering_cost
         total = holding + ordering
-        cost_data.append([q, holding, ordering, total])
+        cost_data.append([q, num_orders, avg_inv, holding, ordering, total])
         
-    df_costs = pd.DataFrame(cost_data, columns=["Order Quantity", "Holding Cost ($)", "Ordering Cost ($)", "Total Inventory Cost ($)"])
+    df_costs = pd.DataFrame(cost_data, columns=[
+        "Order Quantity", 
+        "No of Orders", 
+        "Average Inventory", 
+        "Holding Cost ($)", 
+        "Ordering Cost ($)", 
+        "Total Inventory Cost ($)"
+    ])
     
     # Cost Graph
     fig_eoq = go.Figure()
@@ -87,8 +97,19 @@ if eoq > 0:
     # Stacked Layout
     st.plotly_chart(fig_eoq, use_container_width=True)
     st.markdown("##### Cost Data Table")
-    st.dataframe(df_costs.style.format({"Holding Cost ($)": "${:,.0f}", "Ordering Cost ($)": "${:,.0f}", "Total Inventory Cost ($)": "${:,.0f}"}), use_container_width=True, hide_index=True)
-
+    
+    # Format the new columns for clean display
+    st.dataframe(
+        df_costs.style.format({
+            "No of Orders": "{:,.1f}",
+            "Average Inventory": "{:,.1f}",
+            "Holding Cost ($)": "${:,.0f}", 
+            "Ordering Cost ($)": "${:,.0f}", 
+            "Total Inventory Cost ($)": "${:,.0f}"
+        }), 
+        use_container_width=True, 
+        hide_index=True
+    )
 # ------------------------------------------------
 # Simulation Dashboard
 # ------------------------------------------------

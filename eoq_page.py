@@ -56,8 +56,6 @@ else:
 
 st.divider()
 st.subheader("Theoretical Cost Analysis")
-st.divider()
-st.subheader("Theoretical Cost Analysis")
 
 if eoq > 0:
     # Calculate optimal metrics at EOQ
@@ -79,13 +77,8 @@ if eoq > 0:
     eoq_c6.metric("Total Inventory Cost", f"${opt_total_cost:,.0f}")
     
     st.divider()
-else:
-    st.warning("Please enter valid parameters to calculate EOQ.")
-
-# Generate Data Table for Cost Curves
-# Generate Data Table for Cost Curves
-if eoq > 0:
-    # Create an array of quantities ranging from 20% of EOQ to 200% of EOQ
+    
+    # Generate Data Table for Cost Curves
     q_range = np.linspace(max(10, eoq * 0.2), eoq * 2, 20).astype(int)
     
     cost_data = []
@@ -113,7 +106,6 @@ if eoq > 0:
     fig_eoq.add_trace(go.Scatter(x=df_costs["Order Quantity"], y=df_costs["Total Inventory Cost ($)"], mode="lines", name="Total Cost", line=dict(color="lightgreen", width=3)))
     
     # Mark the EOQ point
-    min_cost = df_costs["Total Inventory Cost ($)"].min()
     fig_eoq.add_vline(x=eoq, line_dash="dash", line_color="white", annotation_text=f"EOQ: {eoq:.0f}", annotation_position="top right")
     
     fig_eoq.update_layout(title="Inventory Costs vs. Order Quantity", xaxis_title="Order Quantity (Units)", yaxis_title="Annual Cost ($)")
@@ -135,8 +127,11 @@ if eoq > 0:
         use_container_width=True, 
         hide_index=True
     )
+else:
+    st.warning("Please enter valid parameters to calculate EOQ.")
+
 # ------------------------------------------------
-# Simulation Dashboard
+# Continuous Review Operational Simulation Dashboard
 # ------------------------------------------------
 st.divider()
 st.subheader("Operational Simulation Dashboard")
@@ -201,7 +196,6 @@ if st.button("Simulate Fulfillment Strategy", type="primary"):
         max_inv = np.max(phys_balances)
         
         # Calculate Simulated Costs
-        annual_holding_cost_per_unit = unit_value * (holding_cost_pct / 100)
         sim_holding_cost = avg_inv * annual_holding_cost_per_unit
         sim_ordering_cost = total_orders_placed * fixed_ordering_cost
         sim_total_cost = sim_holding_cost + sim_ordering_cost
@@ -224,9 +218,10 @@ if st.button("Simulate Fulfillment Strategy", type="primary"):
         ic3.metric("Max Inventory (Units)", f"{max_inv:,.0f}")
         
         # Value row
-        ic1.metric("Avg Capital Blocked ($)", f"${(avg_inv * unit_value):,.0f}")
-        ic2.metric("Min Capital Blocked ($)", f"${(min_inv * unit_value):,.0f}")
-        ic3.metric("Max Capital Blocked ($)", f"${(max_inv * unit_value):,.0f}")
+        vc1, vc2, vc3 = st.columns(3)
+        vc1.metric("Avg Capital Blocked ($)", f"${(avg_inv * unit_value):,.0f}")
+        vc2.metric("Min Capital Blocked ($)", f"${(min_inv * unit_value):,.0f}")
+        vc3.metric("Max Capital Blocked ($)", f"${(max_inv * unit_value):,.0f}")
         
         st.markdown("**Operational Cost Analysis**")
         oc1, oc2, oc3, oc4 = st.columns(4)
@@ -326,80 +321,112 @@ with st.expander("📅 Periodic Review System Optimization"):
             hide_index=True
         )
 
-    # ------------------------------------------------
-    # Periodic Review Operational Simulation Dashboard
-    # ------------------------------------------------
-    st.divider()
-    st.subheader("Periodic Review Operational Simulation")
-    st.markdown("Test a specific Review Period against a 365-day stochastic demand distribution to see operational and financial impacts.")
-    
-    # Default to the optimal review period found above
-    custom_t = st.number_input("Enter Review Period (Days) to Simulate", min_value=1, value=int(opt_pr['Review Period (Days)']), step=1)
-    
-    if st.button("Simulate Periodic Review Strategy", type="primary"):
-        with st.spinner(f"Simulating 365 days for Review Period: {custom_t} days..."):
-            
-            # 1. Generate Demand
-            if cov == 0:
-                sim_demand_pr = np.full(365, int(avg_daily_demand))
-            else:
-                np.random.seed(42)
-                std_dev_daily = avg_daily_demand * cov 
-                var = std_dev_daily**2
-                theta = var / avg_daily_demand
-                k = avg_daily_demand / theta
-                sim_demand_pr = np.random.gamma(k, theta, 365).round().astype(int)
-    
-            # 2. Calculate the Order-Up-To Target Level (S) for the custom T
-            z_score_sim = stats.norm.ppf(pr_sl / 100.0)
-            std_dev_lt_sim = (avg_daily_demand * cov) * math.sqrt(custom_t + lead_time)
-            target_level_sim = (avg_daily_demand * (custom_t + lead_time)) + (z_score_sim * std_dev_lt_sim)
-            
-            # 3. Run Periodic Review Simulation
-            inventory = int(target_level_sim) # Estimated starting balance
-            pipeline = []
-            phys_balances = []
-            lost_sales = 0
-            stockout_days = 0
-            total_demand = 0
-            total_orders_placed = 0
-            
-            for day in range(365):
-                demand_today = sim_demand_pr[day]
-                total_demand += demand_today
+        # ------------------------------------------------
+        # Periodic Review Operational Simulation Dashboard
+        # ------------------------------------------------
+        st.divider()
+        st.subheader("Periodic Review Operational Simulation")
+        st.markdown("Test a specific Review Period against a 365-day stochastic demand distribution to see operational and financial impacts.")
+        
+        # Default to the optimal review period found above
+        custom_t = st.number_input("Enter Review Period (Days) to Simulate", min_value=1, value=int(opt_pr['Review Period (Days)']), step=1)
+        
+        if st.button("Simulate Periodic Review Strategy", type="primary"):
+            with st.spinner(f"Simulating 365 days for Review Period: {custom_t} days..."):
                 
-                # Receive shipments
-                shipment_received = sum(qty for arr_day, qty in pipeline if arr_day == day)
-                pipeline = [(arr_day, qty) for arr_day, qty in pipeline if arr_day > day]
-                
-                inventory += shipment_received
-                
-                # Fulfill Demand
-                if inventory >= demand_today:
-                    inventory -= demand_today
+                # 1. Generate Demand
+                if cov == 0:
+                    sim_demand_pr = np.full(365, int(avg_daily_demand))
                 else:
-                    unmet = demand_today - inventory
-                    lost_sales += unmet
-                    stockout_days += 1
-                    inventory = 0
-                    
-                phys_balances.append(inventory)
+                    np.random.seed(42)
+                    std_dev_daily = avg_daily_demand * cov 
+                    var = std_dev_daily**2
+                    theta = var / avg_daily_demand
+                    k = avg_daily_demand / theta
+                    sim_demand_pr = np.random.gamma(k, theta, 365).round().astype(int)
+
+                # 2. Calculate the Order-Up-To Target Level (S) for the custom T
+                z_score_sim = stats.norm.ppf(pr_sl / 100.0)
+                std_dev_lt_sim = (avg_daily_demand * cov) * math.sqrt(custom_t + lead_time)
+                target_level_sim = (avg_daily_demand * (custom_t + lead_time)) + (z_score_sim * std_dev_lt_sim)
                 
-                # Reorder Logic - ONLY on Review Days
-                if day % custom_t == 0:
-                    inventory_position = inventory + sum(qty for arr_day, qty in pipeline)
-                    order_qty = max(0, target_level_sim - inventory_position)
+                # 3. Run Periodic Review Simulation
+                inventory = int(target_level_sim) # Estimated starting balance
+                pipeline = []
+                phys_balances = []
+                lost_sales = 0
+                stockout_days = 0
+                total_demand_pr = 0
+                total_orders_placed_pr = 0
+                
+                for day in range(365):
+                    demand_today = sim_demand_pr[day]
+                    total_demand_pr += demand_today
                     
-                    if order_qty > 0:
-                        pipeline.append((day + int(lead_time), order_qty))
-                        total_orders_placed += 1
+                    # Receive shipments
+                    shipment_received = sum(qty for arr_day, qty in pipeline if arr_day == day)
+                    pipeline = [(arr_day, qty) for arr_day, qty in pipeline if arr_day > day]
+                    
+                    inventory += shipment_received
+                    
+                    # Fulfill Demand
+                    if inventory >= demand_today:
+                        inventory -= demand_today
+                    else:
+                        unmet = demand_today - inventory
+                        lost_sales += unmet
+                        stockout_days += 1
+                        inventory = 0
                         
-            # 4. Calculate Dashboard Metrics
-            total_fulfilled = total_demand - lost_sales
-            fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
-            avg_inv = np.mean(phys_balances)
-            min_inv = np.min(phys_balances)
-            max_inv = np.max(phys_balances)
-            
-            sim_holding_cost = avg_inv * annual_holding_cost_per_unit
-            sim_ordering_
+                    phys_balances.append(inventory)
+                    
+                    # Reorder Logic - ONLY on Review Days
+                    if day % custom_t == 0:
+                        inventory_position = inventory + sum(qty for arr_day, qty in pipeline)
+                        order_qty = max(0, target_level_sim - inventory_position)
+                        
+                        if order_qty > 0:
+                            pipeline.append((day + int(lead_time), order_qty))
+                            total_orders_placed_pr += 1
+                            
+                # 4. Calculate Dashboard Metrics
+                total_fulfilled_pr = total_demand_pr - lost_sales
+                fill_rate_pr = (total_fulfilled_pr / total_demand_pr * 100) if total_demand_pr > 0 else 100
+                avg_inv_pr = np.mean(phys_balances)
+                min_inv_pr = np.min(phys_balances)
+                max_inv_pr = np.max(phys_balances)
+                
+                sim_holding_cost_pr = avg_inv_pr * annual_holding_cost_per_unit
+                sim_ordering_cost_pr = total_orders_placed_pr * fixed_ordering_cost
+                sim_total_cost_pr = sim_holding_cost_pr + sim_ordering_cost_pr
+
+                # 5. Render Metrics
+                st.markdown(f"#### Results for Review Period: **{custom_t} days** (Target Level: {target_level_sim:,.0f} units)")
+                
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Fill Rate", f"{fill_rate_pr:.2f}%")
+                c2.metric("Stockout Days", f"{stockout_days} days")
+                c3.metric("Total Annual Demand", f"{total_demand_pr:,.0f} units")
+                c4.metric("Missed Sales", f"{lost_sales:,.0f} units")
+                
+                st.markdown("**Inventory Holding Analysis**")
+                ic1, ic2, ic3 = st.columns(3)
+                
+                ic1.metric("Avg Inventory (Units)", f"{avg_inv_pr:,.0f}")
+                ic2.metric("Min Inventory (Units)", f"{min_inv_pr:,.0f}")
+                ic3.metric("Max Inventory (Units)", f"{max_inv_pr:,.0f}")
+                
+                vc1, vc2, vc3 = st.columns(3)
+                vc1.metric("Avg Capital Blocked ($)", f"${(avg_inv_pr * unit_value):,.0f}")
+                vc2.metric("Min Capital Blocked ($)", f"${(min_inv_pr * unit_value):,.0f}")
+                vc3.metric("Max Capital Blocked ($)", f"${(max_inv_pr * unit_value):,.0f}")
+                
+                st.markdown("**Operational Cost Analysis**")
+                oc1, oc2, oc3, oc4 = st.columns(4)
+                oc1.metric("Total Orders Placed", f"{total_orders_placed_pr}")
+                oc2.metric("Annual Holding Cost", f"${sim_holding_cost_pr:,.0f}")
+                oc3.metric("Annual Ordering Cost", f"${sim_ordering_cost_pr:,.0f}")
+                oc4.metric("Total Inventory Cost", f"${sim_total_cost_pr:,.0f}")
+
+    else:
+        st.warning("Please ensure demand and cost parameters are greater than 0.")

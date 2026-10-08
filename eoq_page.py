@@ -84,11 +84,10 @@ if eoq > 0:
     fig_eoq.update_layout(title="Inventory Costs vs. Order Quantity", xaxis_title="Order Quantity (Units)", yaxis_title="Annual Cost ($)")
     fig_eoq = style_plotly_fig(fig_eoq)
     
-    col_chart, col_table = st.columns([3, 2])
-    with col_chart:
-        st.plotly_chart(fig_eoq, use_container_width=True)
-    with col_table:
-        st.dataframe(df_costs.style.format({"Holding Cost ($)": "${:,.0f}", "Ordering Cost ($)": "${:,.0f}", "Total Inventory Cost ($)": "${:,.0f}"}), use_container_width=True, hide_index=True)
+    # Stacked Layout
+    st.plotly_chart(fig_eoq, use_container_width=True)
+    st.markdown("##### Cost Data Table")
+    st.dataframe(df_costs.style.format({"Holding Cost ($)": "${:,.0f}", "Ordering Cost ($)": "${:,.0f}", "Total Inventory Cost ($)": "${:,.0f}"}), use_container_width=True, hide_index=True)
 
 # ------------------------------------------------
 # Simulation Dashboard
@@ -119,6 +118,7 @@ if st.button("Simulate Fulfillment Strategy", type="primary"):
         lost_sales = 0
         stockout_days = 0
         total_demand = 0
+        total_orders_placed = 0
         
         for day in range(365):
             demand_today = sim_demand[day]
@@ -145,6 +145,7 @@ if st.button("Simulate Fulfillment Strategy", type="primary"):
             inventory_position = inventory + sum(qty for arr_day, qty in pipeline)
             if inventory_position < rop:
                 pipeline.append((day + int(lead_time), custom_q))
+                total_orders_placed += 1
                 
         # 3. Calculate Dashboard Metrics
         total_fulfilled = total_demand - lost_sales
@@ -152,6 +153,12 @@ if st.button("Simulate Fulfillment Strategy", type="primary"):
         avg_inv = np.mean(phys_balances)
         min_inv = np.min(phys_balances)
         max_inv = np.max(phys_balances)
+        
+        # Calculate Simulated Costs
+        annual_holding_cost_per_unit = unit_value * (holding_cost_pct / 100)
+        sim_holding_cost = avg_inv * annual_holding_cost_per_unit
+        sim_ordering_cost = total_orders_placed * fixed_ordering_cost
+        sim_total_cost = sim_holding_cost + sim_ordering_cost
 
         # 4. Render Metrics in Units and Value
         st.markdown(f"#### Results for Order Quantity: **{custom_q:,.0f} units**")
@@ -174,3 +181,10 @@ if st.button("Simulate Fulfillment Strategy", type="primary"):
         ic1.metric("Avg Capital Blocked ($)", f"${(avg_inv * unit_value):,.0f}")
         ic2.metric("Min Capital Blocked ($)", f"${(min_inv * unit_value):,.0f}")
         ic3.metric("Max Capital Blocked ($)", f"${(max_inv * unit_value):,.0f}")
+        
+        st.markdown("**Operational Cost Analysis**")
+        oc1, oc2, oc3, oc4 = st.columns(4)
+        oc1.metric("Total Orders Placed", f"{total_orders_placed}")
+        oc2.metric("Annual Holding Cost", f"${sim_holding_cost:,.0f}")
+        oc3.metric("Annual Ordering Cost", f"${sim_ordering_cost:,.0f}")
+        oc4.metric("Total Inventory Cost", f"${sim_total_cost:,.0f}")

@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import math
-import scipy.stats as stats
 
 # Plotly styling
 def style_plotly_fig(fig):
@@ -16,8 +15,30 @@ def style_plotly_fig(fig):
     fig.update_yaxes(showline=True, linewidth=1, linecolor='gray', gridcolor='#2b2b2b', rangemode="tozero")
     return fig
 
+# Frequency Table Generator
+def generate_frequency_table(rolling_series, bins=10):
+    if len(rolling_series) == 0:
+        return pd.DataFrame()
+    counts, bin_edges = np.histogram(rolling_series, bins=bins)
+    freq_df = pd.DataFrame({
+        "Bin Start": np.round(bin_edges[:-1], 2),
+        "Bin End": np.round(bin_edges[1:], 2),
+        "Absolute Count": counts
+    })
+    total_count = counts.sum()
+    if total_count > 0:
+        freq_df["% of Total"] = np.round((freq_df["Absolute Count"] / total_count) * 100, 2)
+        freq_df["Cumulative %"] = np.round(freq_df["% of Total"].cumsum(), 2)
+    else:
+        freq_df["% of Total"] = 0.0
+        freq_df["Cumulative %"] = 0.0
+        
+    freq_df["% of Total"] = freq_df["% of Total"].astype(str) + "%"
+    freq_df["Cumulative %"] = freq_df["Cumulative %"].astype(str) + "%"
+    return freq_df
+
 st.title("Data-Driven Policy Optimization")
-st.write("Upload your historical inventory dataset to analyze cost sensitivities and simulate continuous and periodic review policies.")
+st.write("Upload your historical inventory dataset to analyze cost sensitivities and simulate empirical continuous and periodic review policies.")
 
 # ------------------------------------------------
 # File Upload & Global Parameters
@@ -46,31 +67,38 @@ if uploaded_file is not None:
         st.stop()
         
     # Extract dataset metrics
-    demand_array = df['Demand/Sales'].fillna(0).values
+    demand_series = df['Demand/Sales'].fillna(0)
+    demand_array = demand_series.values
     total_days = len(demand_array)
     total_demand = np.sum(demand_array)
     avg_daily_demand = np.mean(demand_array)
     std_dev_demand = np.std(demand_array)
+    cov = std_dev_demand / avg_daily_demand if avg_daily_demand > 0 else 0
     
     # Timeframe adjusted costs
     period_years = total_days / 365.0
     period_holding_cost_per_unit = annual_holding_cost_per_unit * period_years
-    z_score = stats.norm.ppf(service_level / 100.0)
 
     st.success(f"Dataset loaded successfully! Identified **{total_days} days** of data. Timeframe factor: **{period_years:.2f} years**.")
     
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Average Daily Demand", f"{avg_daily_demand:.2f} units")
     c2.metric("Demand Std Dev", f"{std_dev_demand:.2f} units")
-    c3.metric("Total Period Demand", f"{total_demand:,.0f} units")
+    c3.metric("CoV", f"{cov:.2f}")
+    c4.metric("Total Period Demand", f"{total_demand:,.0f} units")
     
     # ------------------------------------------------
-    # Continuous Review System (EOQ)
+    # Continuous Review System
     # ------------------------------------------------
     st.divider()
     st.header("1. Continuous Review System")
     
-    # Theoretical Optimization
+    # Empirical ROP Calculation (Rolling Lead Time Demand)
+    rolling_demand_cr = demand_series.rolling(window=lead_time).sum().dropna()
+    empirical_rop = np.percentile(rolling_demand_cr, service_level) if len(rolling_demand_cr) > 0 else 0
+    empirical_ss_cr = max(0, empirical_rop - (avg_daily_demand * lead_time))
+    
+    # Theoretical Optimization (Including Empirical Safety Stock)
     if period_holding_cost_per_unit > 0 and fixed_ordering_cost > 0 and total_demand > 0:
         eoq = math.sqrt((2 * total_demand * fixed_ordering_cost) / period_holding_cost_per_unit)
     else:
@@ -80,7 +108,7 @@ if uploaded_file is not None:
     cr_data = []
     
     for q in q_range:
-        avg_inv = q / 2
+        avg_inv = (q / 2) + empirical_ss_cr
         num_orders = total_demand / q if q > 0 else 0
         hc = avg_inv * period_holding_cost_per_unit
         oc = num_orders * fixed_ordering_cost
@@ -91,7 +119,7 @@ if uploaded_file is not None:
     opt_cr = df_cr.loc[df_cr["Total Cost ($)"].idxmin()]
     
     st.subheader("Cost Sensitivity Analysis")
-    st.info(f"**Optimal Order Quantity (EOQ):** {opt_cr['Order Quantity (Q)']:.0f} units | **Minimum Total Cost:** ${opt_cr['Total Cost ($)']:,.0f}")
+    st.info(f"**Optimal Order Quantity (EOQ):** {opt_cr['Order Quantity (Q)']:.0f} units | **Empirical ROP:** {empirical_rop:,.0f} units | **Minimum Total Cost:** ${opt_cr['Total Cost ($)']:,.0f}")
     
     fig_cr = go.Figure()
     fig_cr.add_trace(go.Scatter(x=df_cr["Order Quantity (Q)"], y=df_cr["Holding Cost ($)"], mode="lines", name="Holding Cost", line=dict(color="orange")))
@@ -107,13 +135,9 @@ if uploaded_file is not None:
     # Continuous Review Simulation
     st.subheader("Continuous Review Simulation")
     
-    # Calculate default ROP based on SL
-    std_dev_lt = std_dev_demand * math.sqrt(lead_time)
-    default_rop = (avg_daily_demand * lead_time) + (z_score * std_dev_lt)
-    
     col_q, col_rop = st.columns(2)
     sim_q = col_q.number_input("Simulation Order Quantity", min_value=1, value=int(opt_cr['Order Quantity (Q)']), step=10)
-    sim_rop = col_rop.number_input("Simulation Reorder Point (ROP)", min_value=1, value=int(default_rop), step=10)
+    sim_rop = col_rop.number_input("Simulation Reorder Point (ROP)", min_value=1, value=int(empirical_rop), step=10)
     
     if st.button("Run Continuous Review Simulation", type="primary"):
         inventory = int(sim_rop + (sim_q / 2))
@@ -146,9 +170,9 @@ if uploaded_file is not None:
                 
         total_fulfilled = total_demand - lost_sales
         fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
-        avg_inv = np.mean(phys_balances)
+        avg_inv_sim = np.mean(phys_balances)
         
-        hc_sim = avg_inv * period_holding_cost_per_unit
+        hc_sim = avg_inv_sim * period_holding_cost_per_unit
         oc_sim = orders_placed * fixed_ordering_cost
         
         sc1, sc2, sc3, sc4 = st.columns(4)
@@ -157,18 +181,26 @@ if uploaded_file is not None:
         sc3.metric("Total Orders Placed", f"{orders_placed}")
         sc4.metric("Total Period Cost", f"${(hc_sim + oc_sim):,.0f}")
         
+    with st.expander(f"📊 View Empirical Lead Time ({lead_time} Days) Frequency Table"):
+        st.markdown(f"**Rolling {lead_time}-Day Demand based on uploaded historical data:**")
+        cr_freq_df = generate_frequency_table(rolling_demand_cr, bins=15)
+        st.dataframe(cr_freq_df, use_container_width=True, hide_index=True)
+
     # ------------------------------------------------
     # Periodic Review System
     # ------------------------------------------------
     st.divider()
     st.header("2. Periodic Review System")
     
-    # Theoretical Optimization
+    # Theoretical Optimization using Empirical Rolling Demand for each Review Period (T)
     pr_data = []
     for t in range(1, 91):
-        std_dev_lt_pr = std_dev_demand * math.sqrt(t + lead_time)
-        ss = z_score * std_dev_lt_pr
-        target_lvl = (avg_daily_demand * (t + lead_time)) + ss
+        rolling_demand_pr = demand_series.rolling(window=t + lead_time).sum().dropna()
+        if len(rolling_demand_pr) == 0:
+            continue
+            
+        target_lvl = np.percentile(rolling_demand_pr, service_level)
+        ss = max(0, target_lvl - (avg_daily_demand * (t + lead_time)))
         
         avg_inv_pr = ss + ((avg_daily_demand * t) / 2)
         num_orders_pr = total_days / t
@@ -183,7 +215,7 @@ if uploaded_file is not None:
     opt_pr = df_pr.loc[df_pr["Total Cost ($)"].idxmin()]
     
     st.subheader("Cost Sensitivity Analysis")
-    st.info(f"**Optimal Review Period:** {opt_pr['Review Period (Days)']:.0f} days | **Minimum Total Cost:** ${opt_pr['Total Cost ($)']:,.0f}")
+    st.info(f"**Optimal Review Period:** {opt_pr['Review Period (Days)']:.0f} days | **Empirical Target Level:** {opt_pr['Target Level']:,.0f} units | **Minimum Total Cost:** ${opt_pr['Total Cost ($)']:,.0f}")
     
     fig_pr = go.Figure()
     fig_pr.add_trace(go.Scatter(x=df_pr["Review Period (Days)"], y=df_pr["Holding Cost ($)"], mode="lines", name="Holding Cost", line=dict(color="orange")))
@@ -201,7 +233,12 @@ if uploaded_file is not None:
     
     col_t, col_s = st.columns(2)
     sim_t = col_t.number_input("Simulation Review Period (Days)", min_value=1, value=int(opt_pr['Review Period (Days)']), step=1)
-    sim_s = col_s.number_input("Simulation Target Level (Order-Up-To)", min_value=1, value=int(opt_pr['Target Level']), step=10)
+    
+    # Calculate specific empirical target for chosen sim_t
+    rolling_demand_sim_pr = demand_series.rolling(window=sim_t + lead_time).sum().dropna()
+    empirical_target_lvl = np.percentile(rolling_demand_sim_pr, service_level) if len(rolling_demand_sim_pr) > 0 else int(opt_pr['Target Level'])
+    
+    sim_s = col_s.number_input("Simulation Target Level (Order-Up-To)", min_value=1, value=int(empirical_target_lvl), step=10)
     
     if st.button("Run Periodic Review Simulation", type="primary"):
         inventory = int(sim_s)
@@ -236,15 +273,21 @@ if uploaded_file is not None:
                     
         total_fulfilled = total_demand - lost_sales
         fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
-        avg_inv = np.mean(phys_balances)
+        avg_inv_sim_pr = np.mean(phys_balances)
         
-        hc_sim = avg_inv * period_holding_cost_per_unit
-        oc_sim = orders_placed * fixed_ordering_cost
+        hc_sim_pr = avg_inv_sim_pr * period_holding_cost_per_unit
+        oc_sim_pr = orders_placed * fixed_ordering_cost
         
         sc1, sc2, sc3, sc4 = st.columns(4)
         sc1.metric("Fill Rate", f"{fill_rate:.2f}%")
         sc2.metric("Stockout Days", f"{stockout_days}")
         sc3.metric("Total Orders Placed", f"{orders_placed}")
-        sc4.metric("Total Period Cost", f"${(hc_sim + oc_sim):,.0f}")
+        sc4.metric("Total Period Cost", f"${(hc_sim_pr + oc_sim_pr):,.0f}")
+
+    with st.expander(f"📊 View Empirical Protection Interval ({sim_t + lead_time} Days) Frequency Table"):
+        st.markdown(f"**Rolling {sim_t + lead_time}-Day Demand (Review Period + Lead Time) based on uploaded historical data:**")
+        pr_freq_df = generate_frequency_table(rolling_demand_sim_pr, bins=15)
+        st.dataframe(pr_freq_df, use_container_width=True, hide_index=True)
+
 else:
     st.info("Please upload an inventory dataset in the sidebar to begin optimization.")

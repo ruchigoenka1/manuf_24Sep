@@ -326,80 +326,80 @@ with st.expander("📅 Periodic Review System Optimization"):
             hide_index=True
         )
 
-# ------------------------------------------------
-# Periodic Review Operational Simulation Dashboard
-# ------------------------------------------------
-st.divider()
-st.subheader("Periodic Review Operational Simulation")
-st.markdown("Test a specific Review Period against a 365-day stochastic demand distribution to see operational and financial impacts.")
-
-# Default to the optimal review period found above
-custom_t = st.number_input("Enter Review Period (Days) to Simulate", min_value=1, value=int(opt_pr['Review Period (Days)']), step=1)
-
-if st.button("Simulate Periodic Review Strategy", type="primary"):
-    with st.spinner(f"Simulating 365 days for Review Period: {custom_t} days..."):
-        
-        # 1. Generate Demand
-        if cov == 0:
-            sim_demand_pr = np.full(365, int(avg_daily_demand))
-        else:
-            np.random.seed(42)
-            std_dev_daily = avg_daily_demand * cov 
-            var = std_dev_daily**2
-            theta = var / avg_daily_demand
-            k = avg_daily_demand / theta
-            sim_demand_pr = np.random.gamma(k, theta, 365).round().astype(int)
-
-        # 2. Calculate the Order-Up-To Target Level (S) for the custom T
-        z_score_sim = stats.norm.ppf(pr_sl / 100.0)
-        std_dev_lt_sim = (avg_daily_demand * cov) * math.sqrt(custom_t + lead_time)
-        target_level_sim = (avg_daily_demand * (custom_t + lead_time)) + (z_score_sim * std_dev_lt_sim)
-        
-        # 3. Run Periodic Review Simulation
-        inventory = int(target_level_sim) # Estimated starting balance
-        pipeline = []
-        phys_balances = []
-        lost_sales = 0
-        stockout_days = 0
-        total_demand = 0
-        total_orders_placed = 0
-        
-        for day in range(365):
-            demand_today = sim_demand_pr[day]
-            total_demand += demand_today
+    # ------------------------------------------------
+    # Periodic Review Operational Simulation Dashboard
+    # ------------------------------------------------
+    st.divider()
+    st.subheader("Periodic Review Operational Simulation")
+    st.markdown("Test a specific Review Period against a 365-day stochastic demand distribution to see operational and financial impacts.")
+    
+    # Default to the optimal review period found above
+    custom_t = st.number_input("Enter Review Period (Days) to Simulate", min_value=1, value=int(opt_pr['Review Period (Days)']), step=1)
+    
+    if st.button("Simulate Periodic Review Strategy", type="primary"):
+        with st.spinner(f"Simulating 365 days for Review Period: {custom_t} days..."):
             
-            # Receive shipments
-            shipment_received = sum(qty for arr_day, qty in pipeline if arr_day == day)
-            pipeline = [(arr_day, qty) for arr_day, qty in pipeline if arr_day > day]
-            
-            inventory += shipment_received
-            
-            # Fulfill Demand
-            if inventory >= demand_today:
-                inventory -= demand_today
+            # 1. Generate Demand
+            if cov == 0:
+                sim_demand_pr = np.full(365, int(avg_daily_demand))
             else:
-                unmet = demand_today - inventory
-                lost_sales += unmet
-                stockout_days += 1
-                inventory = 0
-                
-            phys_balances.append(inventory)
+                np.random.seed(42)
+                std_dev_daily = avg_daily_demand * cov 
+                var = std_dev_daily**2
+                theta = var / avg_daily_demand
+                k = avg_daily_demand / theta
+                sim_demand_pr = np.random.gamma(k, theta, 365).round().astype(int)
+    
+            # 2. Calculate the Order-Up-To Target Level (S) for the custom T
+            z_score_sim = stats.norm.ppf(pr_sl / 100.0)
+            std_dev_lt_sim = (avg_daily_demand * cov) * math.sqrt(custom_t + lead_time)
+            target_level_sim = (avg_daily_demand * (custom_t + lead_time)) + (z_score_sim * std_dev_lt_sim)
             
-            # Reorder Logic - ONLY on Review Days
-            if day % custom_t == 0:
-                inventory_position = inventory + sum(qty for arr_day, qty in pipeline)
-                order_qty = max(0, target_level_sim - inventory_position)
+            # 3. Run Periodic Review Simulation
+            inventory = int(target_level_sim) # Estimated starting balance
+            pipeline = []
+            phys_balances = []
+            lost_sales = 0
+            stockout_days = 0
+            total_demand = 0
+            total_orders_placed = 0
+            
+            for day in range(365):
+                demand_today = sim_demand_pr[day]
+                total_demand += demand_today
                 
-                if order_qty > 0:
-                    pipeline.append((day + int(lead_time), order_qty))
-                    total_orders_placed += 1
+                # Receive shipments
+                shipment_received = sum(qty for arr_day, qty in pipeline if arr_day == day)
+                pipeline = [(arr_day, qty) for arr_day, qty in pipeline if arr_day > day]
+                
+                inventory += shipment_received
+                
+                # Fulfill Demand
+                if inventory >= demand_today:
+                    inventory -= demand_today
+                else:
+                    unmet = demand_today - inventory
+                    lost_sales += unmet
+                    stockout_days += 1
+                    inventory = 0
                     
-        # 4. Calculate Dashboard Metrics
-        total_fulfilled = total_demand - lost_sales
-        fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
-        avg_inv = np.mean(phys_balances)
-        min_inv = np.min(phys_balances)
-        max_inv = np.max(phys_balances)
-        
-        sim_holding_cost = avg_inv * annual_holding_cost_per_unit
-        sim_ordering_
+                phys_balances.append(inventory)
+                
+                # Reorder Logic - ONLY on Review Days
+                if day % custom_t == 0:
+                    inventory_position = inventory + sum(qty for arr_day, qty in pipeline)
+                    order_qty = max(0, target_level_sim - inventory_position)
+                    
+                    if order_qty > 0:
+                        pipeline.append((day + int(lead_time), order_qty))
+                        total_orders_placed += 1
+                        
+            # 4. Calculate Dashboard Metrics
+            total_fulfilled = total_demand - lost_sales
+            fill_rate = (total_fulfilled / total_demand * 100) if total_demand > 0 else 100
+            avg_inv = np.mean(phys_balances)
+            min_inv = np.min(phys_balances)
+            max_inv = np.max(phys_balances)
+            
+            sim_holding_cost = avg_inv * annual_holding_cost_per_unit
+            sim_ordering_

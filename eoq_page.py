@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import math
+import scipy.stats as stats
 
 # Updated styling function for a dark background
 def style_plotly_fig(fig):

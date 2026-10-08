@@ -49,7 +49,11 @@ with st.sidebar:
     
     st.header("Cost Parameters")
     fixed_ordering_cost = st.number_input("Fixed Ordering Cost ($/order)", value=500.0, step=50.0)
-    annual_holding_cost_per_unit = st.number_input("Annual Holding Cost ($/unit/year)", value=20.0, step=1.0)
+    unit_value = st.number_input("Unit Value ($)", value=100.0, step=10.0)
+    holding_cost_pct = st.number_input("Holding Cost (%)", value=20.0, step=1.0)
+    
+    # Calculate the annual holding cost per unit dynamically
+    annual_holding_cost_per_unit = unit_value * (holding_cost_pct / 100.0)
     
     st.header("Operational Parameters")
     lead_time = st.number_input("Lead Time (Days)", min_value=1, value=3, step=1)
